@@ -1,0 +1,19 @@
+{
+  "app_name": "SuccessFuel",
+  "description": "Gestion Intelligente de Station-service",
+  "dashboard": "Tableau de bord",
+  "settings": "Paramètres",
+  "logout": "Se déconnecter",
+  "login": "Se connecter",
+  "register": "S'inscrire",
+  "daily_sales": "Ventes quotidiennes",
+  "today_customers": "Clients aujourd'hui",
+  "diesel_stock": "Stock Diesel",
+  "active_employees": "Employés actifs",
+  "weekly_sales": "Ventes hebdomadaires",
+  "weekly_sales_desc": "Total des ventes par jour de la semaine",
+  "fuel_levels": "Niveaux de carburant",
+  "fuel_levels_desc": "Niveau actuel pour chaque type de carburant",
+  "recent_transactions": "Transactions récentes",
+  "recent_transactions_desc": "Dernières ventes effectuées à la station"
+}

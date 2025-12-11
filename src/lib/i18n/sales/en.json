@@ -1,0 +1,20 @@
+{
+  "title": "Sales Management",
+  "transactions": "Transactions",
+  "date": "Date",
+  "amount": "Amount",
+  "type": "Type",
+  "record_sale": "Record Sale",
+  "customer": "Customer",
+  "fuel_type": "Fuel Type",
+  "quantity": "Quantity",
+  "unit_price": "Unit Price",
+  "payment_method": "Payment Method",
+  "status": "Status",
+  "completed": "Completed",
+  "pending": "Pending",
+  "cancelled": "Cancelled",
+  "cash": "Cash",
+  "card": "Card",
+  "credit": "Credit"
+}

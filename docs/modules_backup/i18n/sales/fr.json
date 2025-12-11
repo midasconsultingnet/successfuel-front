@@ -1,0 +1,8 @@
+{
+  "title": "Gestion des Ventes",
+  "transactions": "Transactions",
+  "date": "Date",
+  "amount": "Montant",
+  "type": "Type",
+  "record_sale": "Enregistrer une vente"
+}

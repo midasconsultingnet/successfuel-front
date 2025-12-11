@@ -1,0 +1,19 @@
+{
+  "app_name": "SuccessFuel",
+  "description": "Smart Gas Station Management",
+  "dashboard": "Dashboard",
+  "settings": "Settings",
+  "logout": "Logout",
+  "login": "Login",
+  "register": "Register",
+  "daily_sales": "Daily Sales",
+  "today_customers": "Today's Customers",
+  "diesel_stock": "Diesel Stock",
+  "active_employees": "Active Employees",
+  "weekly_sales": "Weekly Sales",
+  "weekly_sales_desc": "Total sales by day of the week",
+  "fuel_levels": "Fuel Levels",
+  "fuel_levels_desc": "Current level for each fuel type",
+  "recent_transactions": "Recent Transactions",
+  "recent_transactions_desc": "Latest sales made at the station"
+}

@@ -1,0 +1,8 @@
+{
+  "title": "Gestion des Employés",
+  "name": "Nom",
+  "position": "Poste",
+  "schedule": "Emploi du temps",
+  "add_employee": "Ajouter un employé",
+  "contact": "Contact"
+}

@@ -1,0 +1,8 @@
+{
+  "title": "Customer Management",
+  "name": "Name",
+  "vehicle": "Vehicle",
+  "loyalty_points": "Loyalty Points",
+  "add_customer": "Add Customer",
+  "history": "Purchase History"
+}

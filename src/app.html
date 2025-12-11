@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SuccessFuel v0.1.0 - by MIDAS-CONSULTING.NET</title>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+    <script>
+      // Initialize theme when the page loads
+      (function() {
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+          document.documentElement.classList.add('dark');
+        }
+
+        // Apply any saved custom theme
+        const savedCustomTheme = localStorage.getItem('selectedTheme');
+        if (savedCustomTheme && savedCustomTheme !== 'default') {
+          document.documentElement.classList.add('theme-' + savedCustomTheme);
+        }
+      })();
+    </script>
+  </body>
+</html>

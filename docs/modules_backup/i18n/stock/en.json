@@ -1,0 +1,11 @@
+{
+  "title": "Stock Management",
+  "fuel_levels": "Fuel Levels",
+  "add_stock": "Add Stock",
+  "low_stock_alerts": "Low Stock Alerts",
+  "fuel_type": "Fuel Type",
+  "current_level": "Current Level",
+  "unit": "Unit",
+  "actions": "Actions",
+  "update_level": "Update Level"
+}

@@ -1,0 +1,11 @@
+{
+  "title": "Gestion des Stocks",
+  "fuel_levels": "Niveaux de carburant",
+  "add_stock": "Ajouter du stock",
+  "low_stock_alerts": "Alertes de stock faible",
+  "fuel_type": "Type de carburant",
+  "current_level": "Niveau actuel",
+  "unit": "Unité",
+  "actions": "Actions",
+  "update_level": "Mettre à jour le niveau"
+}

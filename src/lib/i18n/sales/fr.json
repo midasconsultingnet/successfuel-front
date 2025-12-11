@@ -1,0 +1,20 @@
+{
+  "title": "Gestion des Ventes",
+  "transactions": "Transactions",
+  "date": "Date",
+  "amount": "Montant",
+  "type": "Type",
+  "record_sale": "Enregistrer une vente",
+  "customer": "Client",
+  "fuel_type": "Type de carburant",
+  "quantity": "Quantité",
+  "unit_price": "Prix unitaire",
+  "payment_method": "Méthode de paiement",
+  "status": "Statut",
+  "completed": "Terminé",
+  "pending": "En attente",
+  "cancelled": "Annulé",
+  "cash": "Espèces",
+  "card": "Carte",
+  "credit": "Crédit"
+}
