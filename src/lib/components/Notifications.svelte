@@ -69,15 +69,6 @@
   }
 </script>
 
-<!-- Composant de toast global -->
-<SonnerToaster 
-  position="bottom-right"
-  theme="system"
-  richColors
-  expand
-  closeButton
-/>
-
 <!-- Bouton de notification -->
 <Popover>
   <PopoverTrigger>

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "successfuel",
+  "productName": "SuccessFuel",
   "version": "0.1.0",
   "identifier": "com.midas.successfuel",
   "build": {
@@ -20,12 +20,12 @@
         "height": 600,
         "resizable": false,
         "transparent": true,
-        "decorations": false        
+        "decorations": false
       },
       {
         "label": "main",
-        "url": "/dashboard",
-        "title": "SuccessFuel v0.1.0 - by MIDAS-CONSULTING.NET",
+        "url": "/login",
+        "title": "SuccessFuel - by MIDAS-CONSULTING.NET",
         "center": true,
         "width": 1200,
         "height": 600,
@@ -35,7 +35,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; connect-src 'self' https://successfuel-api.onrender.com; img-src 'self' https://* data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; object-src 'none'; frame-src 'none'"
     }
   },
   "bundle": {
@@ -47,6 +47,18 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "MIDAS-CONSULTING.NET",
+    "category": "Business",
+    "copyright": "Copyright (c) 2025 MIDAS-CONSULTING.NET. All rights reserved.",
+    "shortDescription": "Gestion d'entreprise de stations-services",
+    "longDescription": "Application de gestion complète pour les stations-services"
+  },
+  "plugins": {
+    "http": {
+      "scope": [
+        "https://successfuel-api.onrender.com/*"
+      ]
+    }
   }
 }

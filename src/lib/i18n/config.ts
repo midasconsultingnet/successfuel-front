@@ -12,7 +12,10 @@ export const I18N_CONFIG = {
   modules: [
     'common',
     'navigation',
-    'sales'
+    'sales',
+    'profile',
+    'structure',
+    'configuration'
   ] as const,
 
   // Emplacement des fichiers de traduction

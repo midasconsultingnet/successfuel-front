@@ -5,5 +5,7 @@
   "employees": "Employees",
   "customers": "Customers",
   "reports": "Reports",
-  "settings": "Settings"
+  "settings": "Settings",
+  "profile": "Profile",
+  "structure": "Structure"
 }

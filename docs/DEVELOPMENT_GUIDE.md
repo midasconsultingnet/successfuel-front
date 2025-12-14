@@ -211,3 +211,97 @@ Le changement de langue se fait via la fonction `setLanguage` et met à jour imm
 - Toujours spécifier le module pour une meilleure organisation
 - Profiter de la réactivité automatique pour les changements dynamiques
 - Utiliser les fallbacks pour une meilleure expérience utilisateur
+
+## Communication avec l'API Backend
+
+L'application est conçue pour interagir avec un backend distant via une API REST. L'architecture mise en place permet une communication modulaire et extensible.
+
+### Architecture
+
+```
+src/lib/services/
+├── HttpClient.ts           # Client HTTP générique avec gestion des erreurs
+├── ApiService.ts           # Service principal configuré pour l'API backend
+├── [Entity]Service.ts      # Services spécifiques aux entités (ex: CustomerService.ts)
+├── ErrorHandler.ts         # Gestion centralisée des erreurs
+└── index.ts               # Point d'entrée pour l'ensemble des services
+```
+
+### Couche HTTP
+
+La classe `HttpClient` fournit une abstraction générique pour les requêtes HTTP avec :
+
+- Méthodes standard (GET, POST, PUT, DELETE)
+- Gestion des headers et paramètres
+- Gestion des erreurs avec système de notification optionnel
+- Support des types TypeScript pour une meilleure sécurité
+
+```typescript
+import { HttpClient } from '$lib/services';
+
+// Exemple d'utilisation
+const client = new HttpClient('https://api.example.com');
+const data = await client.get('/users');
+```
+
+### Injection de dépendances pour les notifications
+
+L'architecture permet d'injecter un gestionnaire de notifications pour gérer les erreurs sans couplage direct avec l'UI :
+
+```typescript
+import { apiService } from '$lib/services';
+import { toast } from '$lib/components/ui/sonner';
+
+const notificationHandler = {
+  showError: (title, description) => toast.error(title, { description }),
+  showSuccess: (title, description) => toast.success(title, { description }),
+  showInfo: (title, description) => toast.info(title, { description }),
+  showWarning: (title, description) => toast.warning(title, { description })
+};
+
+apiService.setNotificationHandler(notificationHandler);
+```
+
+### Services spécifiques
+
+Chaque entité métier possède un service dédié qui :
+
+- Hérite des fonctionnalités de base de `ApiService`
+- Fournit des méthodes spécifiques à l'entité
+- Suit une structure cohérente pour la pagination, la recherche, etc.
+
+Exemple d'architecture pour le service client :
+```typescript
+import { customerService } from '$lib/services';
+
+// Opérations CRUD
+const customers = await customerService.getCustomers(1, 10);
+const customer = await customerService.getCustomerById('customer-id');
+await customerService.createCustomer(customerData);
+await customerService.updateCustomer('customer-id', updateData);
+await customerService.deleteCustomer('customer-id');
+```
+
+### Gestion des erreurs
+
+Le système de gestion des erreurs fournit :
+
+- Classification des erreurs (réseau, authentification, validation, etc.)
+- Transformation des erreurs API en erreurs applicatives
+- Extraction des détails de validation
+- Mécanisme de notification configurable
+
+### Configuration de l'URL de base
+
+L'URL de base de l'API est configurable via une variable d'environnement :
+
+```
+VITE_API_BASE_URL=http://localhost:8000/api
+```
+
+### Bonnes pratiques
+
+- Utiliser les services dédiés plutôt que d'appeler directement HttpClient
+- Toujours gérer les erreurs potentielles avec le système ErrorHandler
+- Spécifier les types TypeScript pour les réponses d'API
+- Injecter les gestionnaires de notifications dans les composants UI plutôt que dans les services

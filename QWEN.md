@@ -250,3 +250,51 @@ Additional project documentation is located in the `docs/` directory.
 3. **Modular i18n**: Internationalization system organized by modules for scalability
 4. **SPA Architecture**: Single-page application built with SvelteKit's adapter-static
 5. **Component Library**: Uses bits-ui and shadcn-svelte for consistent UI components
+6. **API Communication Layer**: Modular architecture for backend API interactions with error handling and type safety
+
+## API Communication Architecture
+
+The project includes a modular architecture for communicating with backend services:
+
+### Core Components
+- `HttpClient.ts` - Generic HTTP client with configurable notification handling
+- `ApiService.ts` - Main API service with authentication and base configuration
+- `ErrorHandler.ts` - Centralized error handling with error classification
+- `[Entity]Service.ts` - Entity-specific services (e.g., `CustomerService.ts`)
+
+### Key Features
+- **Dependency Injection**: Notification handlers can be injected to avoid tight coupling with UI components
+- **Error Handling**: Comprehensive error classification and transformation system
+- **Type Safety**: Full TypeScript support with defined interfaces for API responses
+- **Modular Design**: Each entity has its own service following a consistent pattern
+
+### Usage Example
+The services can be used throughout the application with proper error handling:
+
+```typescript
+import { customerService, handleError } from "$lib/services";
+
+try {
+  const customers = await customerService.getCustomers(1, 10);
+  // Process the customers data
+} catch (error) {
+  handleError(error);
+}
+```
+
+### Notification Handling
+For UI integration, notification handlers can be injected:
+
+```typescript
+import { apiService } from "$lib/services";
+import { toast } from "$lib/components/ui/sonner";
+
+const notificationHandler = {
+  showError: (title, description) => toast.error(title, { description }),
+  showSuccess: (title, description) => toast.success(title, { description }),
+  showInfo: (title, description) => toast.info(title, { description }),
+  showWarning: (title, description) => toast.warning(title, { description })
+};
+
+apiService.setNotificationHandler(notificationHandler);
+```

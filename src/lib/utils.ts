@@ -9,6 +9,7 @@ export function cn(...args: ClassValue[]) {
 export type Without<T, K> = Pick<T, Exclude<keyof T, K>>;
 export type WithoutChildrenOrChild<T> = Without<T, 'children' | 'child'>;
 export type WithElementRef<T> = T & { ref?: HTMLElement | null };
+export type WithoutChild<T> = Without<T, 'child'>;
 
 // Theme utility functions
 export function setDarkMode(isDark: boolean) {

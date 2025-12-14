@@ -4,7 +4,7 @@
   import { i18nStore } from '$lib/i18n';
   import { get } from 'svelte/store';
   import Translate from "$lib/i18n/Translate.svelte";
-
+  import { goto } from '$app/navigation';
 
   // UI Components
   import { Button } from '$lib/components/ui/button';
@@ -15,16 +15,25 @@
   import { Separator } from '$lib/components/ui/separator';
   import { Sheet, SheetContent, SheetTrigger } from '$lib/components/ui/sheet';
   import { NavigationMenu, NavigationMenuList, NavigationMenuItem, NavigationMenuLink } from '$lib/components/ui/navigation-menu';
+  import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '$lib/components/ui/dropdown-menu';
 
   // Custom Components
   import LanguageSelector from './LanguageSelector.svelte';
   import Notifications from './Notifications.svelte';
   import ThemeToggle from './ThemeToggle.svelte';
   import ThemeSelector from './ThemeSelector.svelte';
+  import { Toaster } from '$lib/components/ui/sonner';
+
+  // Services
+  import { authStore } from '$lib/services/authStore';
+  import { companyStore, type CompanyState } from '$lib/services/companyStore';
+  import { getCurrentUser } from '$lib/utils/authUtils';
 
   // State
   let isSidebarOpen = $state(true);
   let isMobileMenuOpen = $state(false);
+  let user = $state<any>(null);
+  let company = $state<any>(null);
 
   // Navigation items
   interface NavItem {
@@ -44,11 +53,39 @@
     isMobileMenuOpen = !isMobileMenuOpen;
   }
 
+  function handleLogout() {
+    authStore.logout().then(() => {
+      goto('/login');
+    }).catch((error) => {
+      console.error('Erreur lors de la déconnexion:', error);
+      // Afficher une notification d'erreur si nécessaire
+    });
+  }
+
+  // S'abonner aux changements d'authentification et de la compagnie
+  $effect(() => {
+    const unsubscribe = authStore.subscribe((authState) => {
+      user = authState.user;
+    });
+
+    // S'abonner aux changements de la compagnie
+    const unsubscribeCompany = companyStore.subscribe((state: CompanyState) => {
+      company = state.company;
+    });
+
+    // Nettoyer les abonnements
+    return () => {
+      unsubscribe();
+      unsubscribeCompany();
+    };
+  });
+
   // Initialize navigation items with translation keys
   $effect(() => {
     navItems = [
       { href: '/dashboard', icon: '📊', titleKey: 'dashboard' },
-      { href: '/dashboard/sales', icon: '💰', titleKey: 'sales' }
+      { href: '/dashboard/sales', icon: '💰', titleKey: 'sales' },
+      { href: '/dashboard/structure', icon: '🏗️', titleKey: 'structure' }
     ];
   });
 
@@ -72,7 +109,7 @@
       return () => window.removeEventListener('resize', handleResize);
     }
   });
-  
+
   // Props
   let { children } = $props();
 </script>
@@ -113,23 +150,31 @@
       <div class="px-3 py-2">
         {#if isSidebarOpen}
           <h3 class="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            User
+            <Translate key="user" module="common" fallback="User" />
           </h3>
           <div class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-accent">
             <Avatar class="h-8 w-8">
               <AvatarImage src="https://github.com/shadcn.png" alt="@shadcn" />
-              <AvatarFallback>CN</AvatarFallback>
+              <AvatarFallback>
+                {user?.prenom?.charAt(0) || user?.nom?.charAt(0) || user?.login?.charAt(0) || 'U'}
+              </AvatarFallback>
             </Avatar>
             <div class="flex-1">
-              <p class="text-sm font-medium">Admin User</p>
-              <p class="text-xs text-muted-foreground">admin@successfuel.com</p>
+              <p class="text-sm font-medium">
+                {user?.prenom || user?.nom || user?.login || 'Utilisateur'}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {company?.nom || 'Aucune compagnie'}
+              </p>
             </div>
           </div>
         {:else}
           <div class="flex justify-center">
-            <Avatar class="h-8 w-8" title="Admin User">
+            <Avatar class="h-8 w-8" title={user?.prenom || user?.nom || user?.login || 'Utilisateur'}>
               <AvatarImage src="https://github.com/shadcn.png" alt="@shadcn" />
-              <AvatarFallback>CN</AvatarFallback>
+              <AvatarFallback>
+                {user?.prenom?.charAt(0) || user?.nom?.charAt(0) || user?.login?.charAt(0) || 'U'}
+              </AvatarFallback>
             </Avatar>
           </div>
         {/if}
@@ -248,11 +293,30 @@
             <!-- Theme Selector -->
             <ThemeSelector />
 
-            <!-- Avatar utilisateur -->
-            <Avatar class="h-8 w-8">
-              <AvatarImage src="https://github.com/shadcn.png" alt="@shadcn" />
-              <AvatarFallback>CN</AvatarFallback>
-            </Avatar>
+            <!-- Menu utilisateur avec déconnexion -->
+            <DropdownMenu>
+              <DropdownMenuTrigger>
+                <Button variant="ghost" class="relative h-8 w-8 rounded-full">
+                  <Avatar class="h-8 w-8">
+                    <AvatarImage src="https://github.com/shadcn.png" alt="@shadcn" />
+                    <AvatarFallback>CN</AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent class="w-56" align="end">
+                <div class="p-2">
+                  <p class="text-sm font-medium">{user?.prenom || user?.firstName || user?.login || 'Utilisateur'}</p>
+                  <p class="text-xs text-muted-foreground">{company?.nom || 'Aucune compagnie'}</p>
+                </div>
+                <Separator />
+                <DropdownMenuItem onclick={() => goto('/dashboard/profile')} class="cursor-pointer">
+                  <Translate key="profile" module="navigation" fallback="Profil" />
+                </DropdownMenuItem>
+                <DropdownMenuItem onclick={handleLogout} class="cursor-pointer">
+                  <Translate key="logout" module="common" fallback="Déconnexion" />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </div>
@@ -268,3 +332,6 @@
     </div>
   </div>
 </main>
+
+<!-- Notifications toaster -->
+<Toaster />

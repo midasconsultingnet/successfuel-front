@@ -86,7 +86,7 @@
   }
 </script>
 
-<DashboardLayout>
+
   <div class="container mx-auto py-6">
     <div class="flex justify-between items-center mb-6">
       <h1 class="text-3xl font-bold tracking-tight"><Translate key="title" module="sales" /></h1>
@@ -202,4 +202,3 @@
       </CardContent>
     </Card>
   </div>
-</DashboardLayout>

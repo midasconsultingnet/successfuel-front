@@ -42,16 +42,22 @@ export const initializeI18n = async () => {
 // Charger toutes les traductions
 const loadAllTranslations = async (language: Language) => {
   // Charger tous les modules de traduction
-  const [common, navigation, sales] = await Promise.all([
+  const [common, navigation, sales, profile, structure, configuration] = await Promise.all([
     import(`./common/${language}.json`).then(m => m.default),
     import(`./navigation/${language}.json`).then(m => m.default),
-    import(`./sales/${language}.json`).then(m => m.default)
+    import(`./sales/${language}.json`).then(m => m.default),
+    import(`./profile/${language}.json`).then(m => m.default),
+    import(`./structure/${language}.json`).then(m => m.default),
+    import(`./configuration/${language}.json`).then(m => m.default)
   ]);
 
   return {
     common,
     navigation,
-    sales
+    sales,
+    profile,
+    structure,
+    configuration
   };
 };
 
@@ -72,7 +78,7 @@ export const setLanguage = async (language: Language) => {
 };
 
 // Fonction utilitaire pour obtenir une traduction
-export const getTranslation = (resources: Record<string, any>, key: string, module: 'common' | 'navigation' = 'common'): string => {
+export const getTranslation = (resources: Record<string, any>, key: string, module: 'common' | 'navigation' | 'sales' | 'profile' | 'structure' | 'configuration' = 'common'): string => {
   if (!resources || !resources[module]) {
     return key; // Retourne la clé si le module n'est pas chargé
   }

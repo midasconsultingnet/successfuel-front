@@ -1,0 +1,20 @@
+{
+  "structure": "Structure",
+  "stations": "Stations",
+  "stations_description": "List of stations in your network",
+  "add_station": "Add Station",
+  "add_station_description": "Enter the information for the new station",
+  "edit_station": "Edit Station",
+  "edit_station_description": "Modify the station information",
+  "coordinates": "GPS Coordinates",
+  "stations_list_caption": "List of stations",
+  "enter_station": "Enter the station",
+  "continue_configuration": "Continue configuration",
+  "station_created_success": "Station created successfully",
+  "station_updated_success": "Station updated successfully",
+  "station_deleted_success": "Station deleted successfully",
+  "error_creating_station": "Error creating station",
+  "error_updating_station": "Error updating station",
+  "error_deleting_station": "Error deleting station",
+  "confirm_delete_station": "Are you sure you want to delete this station?"
+}

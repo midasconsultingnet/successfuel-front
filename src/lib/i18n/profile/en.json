@@ -1,0 +1,19 @@
+{
+  "title": "Profile Settings",
+  "subtitle": "Manage your personal information",
+  "personal_info": "Personal Information",
+  "first_name": "First Name",
+  "last_name": "Last Name",
+  "email": "Email",
+  "password": "Password",
+  "confirm_password": "Confirm Password",
+  "update_profile": "Update Profile",
+  "profile_updated": "Profile updated successfully",
+  "password_requirements": "Password must be at least 8 characters long",
+  "save": "Save",
+  "cancel": "Cancel",
+  "updating": "Updating...",
+  "password_placeholder": "Enter your new password",
+  "confirm_password_placeholder": "Confirm your new password",
+  "first_name_required": "First name is required"
+}

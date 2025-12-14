@@ -7,6 +7,9 @@
 
 <Sonner
 	theme={mode.current}
+	position="top-center"
+	richColors
+	expand
 	class="toaster group"
 	style="--normal-bg: var(--color-popover); --normal-text: var(--color-popover-foreground); --normal-border: var(--color-border);"
 	{...restProps}

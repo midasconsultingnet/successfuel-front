@@ -1,21 +1,11 @@
 <script lang="ts">
-  import type { HTMLSelectAttributes } from "svelte/elements";
+	import { Select as SelectPrimitive } from "bits-ui";
 
-  export type SelectProps = HTMLSelectAttributes & {
-    asChild?: boolean;
-  };
-
-  let {
-    asChild = false,
-    class: className = "",
-    children,
-    ...restProps
-  }: SelectProps = $props();
+	let {
+		open = $bindable(false),
+		value = $bindable(),
+		...restProps
+	}: SelectPrimitive.RootProps = $props();
 </script>
 
-<select
-  class={className}
-  {...restProps}
->
-  {@render children?.()}
-</select>
+<SelectPrimitive.Root bind:open bind:value={value as never} {...restProps} />
