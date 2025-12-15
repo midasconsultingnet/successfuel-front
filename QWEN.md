@@ -45,6 +45,18 @@ successfuel/
 │       ├── styles/        # CSS styles
 │       ├── types/         # TypeScript type definitions
 │       └── utils/         # Utility functions
+│           ├── index.ts   # Centralized export of common utilities
+│           ├── numbers.ts # Number and currency formatting utilities
+│           ├── financial.ts # Financial calculation utilities
+│           ├── dates.ts   # Date formatting utilities
+│           ├── locale.ts  # Locale configuration service
+│           ├── validation.ts # Data validation utilities
+│           ├── statistics.ts # Statistical calculation utilities
+│           ├── inventory.ts # Inventory management utilities
+│           ├── formulas.ts # Business formula utilities
+│           ├── security.ts # Security utilities
+│           ├── exports.ts # Data export utilities
+│           └── helpers.ts # General helper utilities
 ├── src-tauri/             # Tauri Rust backend source
 │   ├── src/               # Rust source files
 │   ├── Cargo.toml         # Rust dependencies and config
@@ -251,6 +263,63 @@ Additional project documentation is located in the `docs/` directory.
 4. **SPA Architecture**: Single-page application built with SvelteKit's adapter-static
 5. **Component Library**: Uses bits-ui and shadcn-svelte for consistent UI components
 6. **API Communication Layer**: Modular architecture for backend API interactions with error handling and type safety
+
+## Utility Functions Architecture
+
+The project implements a comprehensive utility system designed for ERP applications like SuccessFuel:
+
+### Core Components
+- `index.ts` - Centralized export module providing easy access to common utilities
+- `numbers.ts` - Number formatting and currency utilities with locale support
+- `financial.ts` - Financial calculation utilities with business-specific functions
+- `dates.ts` - Date formatting utilities with locale-aware formatting
+- `locale.ts` - Locale configuration service managing language and currency settings
+- `validation.ts` - Data validation utilities with locale-adaptive validation
+- Other specialized utility modules
+
+### Key Features
+- **Locale Integration**: Automatic use of user's preferred language and currency from localStorage
+- **Centralized Access**: Common functions accessible via single import from `$lib/utils`
+- **Modular Structure**: Specialized utilities organized in separate modules
+- **ERP-Focused**: Functions specifically designed for business applications
+
+### Common Utilities
+- `formatCurrency(value, currency?)`: Formats currency values using user's default currency
+- `formatNumber(value, decimals?, locale?)`: Formats numbers with proper thousand separators
+- `formatPercent(value, locale?)`: Formats percentage values
+- `formatLocalDate(date, locale?)`: Formats dates according to user's locale
+- `formatDateTime(date, locale?)`: Formats date and time according to user's locale
+- `roundCurrency(value)`: Rounds currency values to 2 decimal places
+- `calculatePercent(value, percent)`: Calculates percentage of a value
+
+### Locale Management
+The locale service (`locale.ts`) automatically:
+- Reads language from localStorage key 'language'
+- Reads currency from localStorage key 'currency'
+- Falls back to default 'fr-FR' and 'XOF' if not found
+- Provides functions to update and persist locale settings
+
+### Usage Examples
+```typescript
+import { formatCurrency, formatNumber, getCurrentCurrency } from '$lib/utils';
+
+// Format currency using user's default currency
+const formattedPrice = formatCurrency(1234.5); // "1 234,50 XOF" for French locale
+
+// Format with specific currency
+const usdPrice = formatCurrency(1234.5, 'USD'); // "$1,234.50" for French locale
+
+// Format numbers with thousand separators
+const formattedNumber = formatNumber(1234567.89); // "1 234 567,89" for French locale
+
+// Get current user settings
+const currency = getCurrentCurrency(); // Gets currency from localStorage
+```
+
+### Integration with Existing Components
+The utilities have been integrated with existing components such as:
+- Infrastructure configuration page showing fuel prices with proper currency formatting
+- Automatic use of user's preferred currency and language settings
 
 ## API Communication Architecture
 

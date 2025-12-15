@@ -16,6 +16,7 @@
   // Récupérer les données de la page
   let stationId = $state<string>('');
   let stationData = $state<any>(null);
+  let hasLoaded = $state<boolean>(false); // Pour éviter le chargement multiple
 
   // Charger l'ID de la station depuis les données du layout
   $effect(() => {
@@ -23,7 +24,12 @@
       if (data.data?.stationId && stationId !== data.data?.stationId) {
         stationId = data.data.stationId;
         stationData = data.data.station;
-        // Charger la configuration dès que l'ID est disponible
+        hasLoaded = false; // Réinitialiser le statut de chargement
+      }
+
+      // Charger la configuration une seule fois quand les données sont disponibles
+      if (stationId && stationData && !hasLoaded) {
+        hasLoaded = true;
         loadConfigurationState();
       }
     });
@@ -86,33 +92,30 @@
   ]);
 
   // Fonction pour charger l'état de configuration
-  async function loadConfigurationState() {
+  function loadConfigurationState() {
     try {
       console.log('Tentative de chargement de la configuration pour la station:', stationId);
       loading = true;
-      if (!stationId) {
-        throw new Error('ID de station manquant');
+      if (!stationId || !stationData) {
+        throw new Error('Données de station manquantes');
       }
 
-      // Charger la station avec ses données de configuration via le service
-      const stationApiData = await stationService.getStationById(stationId);
-      console.log('Données de station récupérées:', stationApiData);
-
-      // Mise à jour de l'état de configuration en fonction des données API
+      // Utiliser les données du layout pour éviter le double appel API
+      // Mise à jour de l'état de configuration en fonction des données du layout
       configurationState = {
         id: `config_${stationId}`, // Utiliser un ID basé sur l'ID de la station
         station_id: stationId,
-        station_name: stationApiData.nom, // Ajout du nom de la station
-        station_code: stationApiData.code, // Ajout du code de la station
-        station_address: stationApiData.adresse, // Ajout de l'adresse de la station
-        infrastructure_complete: stationApiData.config?.completion?.carburants || false,
-        partners_complete: stationApiData.config?.completion?.fournisseurs || false,
-        employees_complete: stationApiData.config?.completion?.employes || false,
-        finances_complete: stationApiData.config?.completion?.tresorerie || false,
-        balance_complete: stationApiData.config?.completion?.soldes || false,
+        station_name: stationData.name, // Données provenant du layout
+        station_code: stationData.code, // Données provenant du layout
+        station_address: stationData.address, // Données provenant du layout
+        infrastructure_complete: stationData.config?.completion?.carburants || false,
+        partners_complete: stationData.config?.completion?.fournisseurs || false,
+        employees_complete: stationData.config?.completion?.employes || false,
+        finances_complete: stationData.config?.completion?.tresorerie || false,
+        balance_complete: stationData.config?.completion?.soldes || false,
         is_complete: false, // À déterminer selon les autres complétions
-        created_at: stationApiData.created_at,
-        updated_at: stationApiData.updated_at
+        created_at: stationData.created_at,
+        updated_at: stationData.updated_at
       };
 
       // Calculer si la configuration est complètement terminée
@@ -138,9 +141,9 @@
       configurationState = {
         id: 'default_config_id',
         station_id: stationId,
-        station_name: 'Station Inconnue', // Valeur par défaut en cas d'erreur
-        station_code: 'N/A', // Valeur par défaut en cas d'erreur
-        station_address: 'N/A', // Valeur par défaut en cas d'erreur
+        station_name: stationData?.name || 'Station Inconnue', // Valeur du layout ou défaut
+        station_code: stationData?.code || 'N/A', // Valeur du layout ou défaut
+        station_address: stationData?.address || 'N/A', // Valeur du layout ou défaut
         infrastructure_complete: false,
         partners_complete: false,
         employees_complete: false,

@@ -58,8 +58,8 @@ class StationService {
   /**
    * Récupérer une station par son ID
    */
-  async getStationById(id: string): Promise<Station> {
-    return await apiService.get<Station>(`/compagnie/stations/${id}`);
+  async getStationById(id: string, customFetch?: typeof fetch): Promise<Station> {
+    return await apiService.get<Station>(`/compagnie/stations/${id}`, undefined, customFetch);
   }
 
   /**

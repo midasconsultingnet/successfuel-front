@@ -72,5 +72,9 @@
   "basic_info": "Informations de base",
   "inconsistent_calibrations": "Points de barémage incohérents détectés",
   "volume_must_be_greater": "Le volume à la hauteur {height1} doit être supérieur au volume à la hauteur {height2}",
-  "max_volume_not_reached": "Le volume maximum du barémage ({max_volume} L) ne atteint pas la capacité maximale de la cuve ({tank_capacity} L)"
+  "max_volume_not_reached": "Le volume maximum du barémage ({max_volume} L) ne atteint pas la capacité maximale de la cuve ({tank_capacity} L)",
+  "select_tank_and_level": "Sélectionnez une cuve et entrez le niveau initial",
+  "select_tank": "Sélectionner une cuve",
+  "initial_level_placeholder": "Hauteur en cm",
+  "current_volume": "Volume actuel:"
 }

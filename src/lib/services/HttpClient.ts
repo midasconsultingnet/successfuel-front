@@ -50,9 +50,10 @@ export class HttpClient {
   /**
    * Méthode GET
    */
-  async get<T>(endpoint: string, config: HttpRequestConfig = {}): Promise<T> {
+  async get<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
     const url = this.buildUrl(endpoint, config.params);
-    const response = await fetch(url, {
+    const actualFetch = customFetch || fetch;
+    const response = await actualFetch(url, {
       method: 'GET',
       headers: { ...this.defaultHeaders, ...config.headers }
     });
@@ -63,9 +64,10 @@ export class HttpClient {
   /**
    * Méthode POST
    */
-  async post<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}): Promise<T> {
+  async post<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
     const url = this.buildUrl(endpoint, config.params);
-    const response = await fetch(url, {
+    const actualFetch = customFetch || fetch;
+    const response = await actualFetch(url, {
       method: 'POST',
       headers: { ...this.defaultHeaders, ...config.headers },
       body: data ? JSON.stringify(data) : undefined
@@ -77,9 +79,10 @@ export class HttpClient {
   /**
    * Méthode PUT
    */
-  async put<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}): Promise<T> {
+  async put<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
     const url = this.buildUrl(endpoint, config.params);
-    const response = await fetch(url, {
+    const actualFetch = customFetch || fetch;
+    const response = await actualFetch(url, {
       method: 'PUT',
       headers: { ...this.defaultHeaders, ...config.headers },
       body: data ? JSON.stringify(data) : undefined
@@ -91,9 +94,10 @@ export class HttpClient {
   /**
    * Méthode DELETE
    */
-  async delete<T>(endpoint: string, config: HttpRequestConfig = {}): Promise<T> {
+  async delete<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
     const url = this.buildUrl(endpoint, config.params);
-    const response = await fetch(url, {
+    const actualFetch = customFetch || fetch;
+    const response = await actualFetch(url, {
       method: 'DELETE',
       headers: { ...this.defaultHeaders, ...config.headers }
     });

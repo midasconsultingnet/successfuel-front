@@ -3,6 +3,8 @@ use tauri::async_runtime::spawn;
 use tauri::{AppHandle, Manager, State, PhysicalPosition};
 use tokio::time::{sleep, Duration};
 
+mod auth;
+
 // Structure pour suivre l'état d'initialisation
 struct SetupState {
     frontend_task: bool,
@@ -62,8 +64,18 @@ pub fn run() {
             frontend_task: false,
             backend_task: false,
         }))
+        .manage(auth::AuthState::new(
+            std::env::var("VITE_API_BASE_URL")
+                .unwrap_or_else(|_| "https://successfuel-api.onrender.com/api/v1".to_string())
+        ).expect("Impossible de créer l'état d'authentification"))
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, set_complete])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            set_complete,
+            auth::login,
+            auth::refresh_token,
+            auth::logout
+        ])
         .setup(|app| {
             spawn(setup(app.handle().clone()));
             let window_splashscreen = app.get_webview_window("splashscreen").unwrap();

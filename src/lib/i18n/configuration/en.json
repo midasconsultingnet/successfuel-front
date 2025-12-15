@@ -72,5 +72,9 @@
   "basic_info": "Basic Information",
   "inconsistent_calibrations": "Inconsistent calibration points detected",
   "volume_must_be_greater": "Volume at height {height1} must be greater than volume at height {height2}",
-  "max_volume_not_reached": "Maximum calibration volume ({max_volume} L) does not reach tank's maximum capacity ({tank_capacity} L)"
+  "max_volume_not_reached": "Maximum calibration volume ({max_volume} L) does not reach tank's maximum capacity ({tank_capacity} L)",
+  "select_tank_and_level": "Select a tank and enter the initial level",
+  "select_tank": "Select a tank",
+  "initial_level_placeholder": "Height in cm",
+  "current_volume": "Current volume:"
 }

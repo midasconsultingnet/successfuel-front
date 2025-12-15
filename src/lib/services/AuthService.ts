@@ -1,5 +1,9 @@
 import type { NotificationHandler } from './HttpClient';
 import { apiService } from './ApiService';
+import { tauriAuthService } from './TauriAuthService';
+
+// Vérifier si nous sommes dans l'environnement Tauri
+const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__;
 
 // Interfaces pour les requêtes et réponses d'authentification
 export interface LoginRequest {
@@ -28,112 +32,28 @@ class AuthService {
    * Se connecter à l'application
    */
   async login(credentials: LoginRequest): Promise<LoginResponse> {
-    try {
-      // Appel à l'API de login sans token d'authentification
-      const response = await fetch(`${apiService.getBaseUrl()}/auth/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(credentials)
-      });
-
-      if (!response.ok) {
-        throw new Error(`Erreur de login: ${response.status}`);
-      }
-
-      const data: LoginResponse = await response.json();
-
-      // Stocker le token d'accès et sa date d'expiration
-      if (data.access_token) {
-        // Calculer la date d'expiration (on suppose que le token est valide pendant 30 minutes par défaut)
-        const tokenLifetimeMinutes = parseInt(import.meta.env.VITE_ACCESS_TOKEN_LIFETIME_MINUTES || '30');
-        const expiry = new Date();
-        expiry.setMinutes(expiry.getMinutes() + tokenLifetimeMinutes);
-
-        localStorage.setItem('access_token', data.access_token);
-        localStorage.setItem('access_token_expiry', expiry.getTime().toString());
-
-        // Mettre à jour le header d'authentification dans ApiService
-        apiService.setAuthToken(data.access_token, expiry);
-      }
-
-      return data;
-    } catch (error) {
-      if (this.notificationHandler) {
-        this.notificationHandler.showError('Erreur de connexion', (error as Error).message);
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Se déconnecter de l'application
-   */
-  async logout(): Promise<void> {
-    try {
-      // Appeler l'API de déconnexion (nécessite le token d'accès)
-      const response = await fetch(`${apiService.getBaseUrl()}/auth/logout`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
-          'Content-Type': 'application/json',
-        }
-      });
-
-      if (!response.ok && response.status !== 401) { // 401 est acceptable lors du logout
-        console.warn(`Erreur lors du logout: ${response.status}`);
-      }
-
-      // Nettoyer les tokens localement
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('access_token_expiry');
-      apiService.setAuthToken(null);
-    } catch (error) {
-      if (this.notificationHandler) {
-        this.notificationHandler.showWarning('Erreur lors de la déconnexion', (error as Error).message);
-      }
-      // Même en cas d'erreur, on nettoie les tokens localement
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('access_token_expiry');
-      apiService.setAuthToken(null);
-    }
-  }
-
-  /**
-   * Rafraîchir le token d'accès
-   */
-  async refreshToken(): Promise<string> {
-    // Si un refresh est déjà en cours, retourner cette promesse
-    if (this.tokenRefreshPromise) {
-      return this.tokenRefreshPromise;
-    }
-
-    this.tokenRefreshPromise = (async () => {
+    if (isTauri) {
+      // Utiliser le service Tauri dans l'environnement Tauri
+      return tauriAuthService.login(credentials);
+    } else {
+      // Utiliser l'approche traditionnelle pour les environnements non-Tauri
       try {
-        const response = await fetch(`${apiService.getBaseUrl()}/auth/refresh`, {
+        // Appel à l'API de login sans token d'authentification
+        const response = await fetch(`${apiService.getBaseUrl()}/auth/login`, {
           method: 'POST',
-          credentials: 'include', // Important pour envoyer les cookies HTTPOnly
           headers: {
             'Content-Type': 'application/json',
-          }
+          },
+          body: JSON.stringify(credentials)
         });
 
         if (!response.ok) {
-          // Si le refresh échoue avec un 401, effectuer une déconnexion locale immédiate
-          if (response.status === 401) {
-            this.localLogout();
-            throw new Error(`Erreur de rafraîchissement du token: ${response.status}`);
-          } else {
-            // Si le refresh échoue pour une autre raison, déconnecter normalement
-            await this.logout();
-            throw new Error(`Erreur de rafraîchissement du token: ${response.status}`);
-          }
+          throw new Error(`Erreur de login: ${response.status}`);
         }
 
         const data: LoginResponse = await response.json();
 
-        // Stocker le nouveau token d'accès et sa date d'expiration
+        // Stocker le token d'accès et sa date d'expiration
         if (data.access_token) {
           // Calculer la date d'expiration (on suppose que le token est valide pendant 30 minutes par défaut)
           const tokenLifetimeMinutes = parseInt(import.meta.env.VITE_ACCESS_TOKEN_LIFETIME_MINUTES || '30');
@@ -145,22 +65,126 @@ class AuthService {
 
           // Mettre à jour le header d'authentification dans ApiService
           apiService.setAuthToken(data.access_token, expiry);
-
-          return data.access_token;
-        } else {
-          throw new Error('Aucun token reçu lors du refresh');
         }
+
+        return data;
       } catch (error) {
         if (this.notificationHandler) {
-          this.notificationHandler.showError('Erreur de session', 'Votre session a expiré, veuillez vous reconnecter');
+          this.notificationHandler.showError('Erreur de connexion', (error as Error).message);
         }
         throw error;
-      } finally {
-        this.tokenRefreshPromise = null;
       }
-    })();
+    }
+  }
 
-    return this.tokenRefreshPromise;
+  /**
+   * Se déconnecter de l'application
+   */
+  async logout(): Promise<void> {
+    // Pour la déconnexion, on fait la requête API de la même manière dans tous les environnements
+    // La requête logout a besoin du token d'accès pour être autorisée par le backend
+    try {
+      const token = localStorage.getItem('access_token');
+      if (token) {
+        // Appeler l'API de déconnexion (nécessite le token d'accès)
+        const response = await fetch(`${apiService.getBaseUrl()}/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          }
+        });
+
+        if (!response.ok && response.status !== 401) { // 401 est acceptable lors du logout
+          console.warn(`Erreur lors du logout: ${response.status}`);
+        }
+      }
+    } catch (error) {
+      console.warn('Erreur lors de l\'appel API de logout:', error);
+      // On continue le nettoyage même en cas d'erreur de requête API
+    }
+
+    // Nettoyer les tokens localement dans tous les cas
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('access_token_expiry');
+    apiService.setAuthToken(null);
+
+    // Dans l'environnement Tauri, on appelle quand même la commande Rust pour nettoyer les cookies HTTPOnly
+    if (isTauri) {
+      try {
+        await tauriAuthService.logout();
+      } catch (error) {
+        console.error('Erreur lors du nettoyage Tauri:', error);
+      }
+    }
+  }
+
+  /**
+   * Rafraîchir le token d'accès
+   */
+  async refreshToken(): Promise<string> {
+    if (isTauri) {
+      // Utiliser le service Tauri dans l'environnement Tauri
+      return tauriAuthService.refreshToken();
+    } else {
+      // Si un refresh est déjà en cours, retourner cette promesse
+      if (this.tokenRefreshPromise) {
+        return this.tokenRefreshPromise;
+      }
+
+      this.tokenRefreshPromise = (async () => {
+        try {
+          const response = await fetch(`${apiService.getBaseUrl()}/auth/refresh`, {
+            method: 'POST',
+            credentials: 'include', // Important pour envoyer les cookies HTTPOnly
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          });
+
+          if (!response.ok) {
+            // Si le refresh échoue avec un 401, effectuer une déconnexion locale immédiate
+            if (response.status === 401) {
+              this.localLogout();
+              throw new Error(`Erreur de rafraîchissement du token: ${response.status}`);
+            } else {
+              // Si le refresh échoue pour une autre raison, déconnecter normalement
+              await this.logout();
+              throw new Error(`Erreur de rafraîchissement du token: ${response.status}`);
+            }
+          }
+
+          const data: LoginResponse = await response.json();
+
+          // Stocker le nouveau token d'accès et sa date d'expiration
+          if (data.access_token) {
+            // Calculer la date d'expiration (on suppose que le token est valide pendant 30 minutes par défaut)
+            const tokenLifetimeMinutes = parseInt(import.meta.env.VITE_ACCESS_TOKEN_LIFETIME_MINUTES || '30');
+            const expiry = new Date();
+            expiry.setMinutes(expiry.getMinutes() + tokenLifetimeMinutes);
+
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('access_token_expiry', expiry.getTime().toString());
+
+            // Mettre à jour le header d'authentification dans ApiService
+            apiService.setAuthToken(data.access_token, expiry);
+
+            return data.access_token;
+          } else {
+            throw new Error('Aucun token reçu lors du refresh');
+          }
+        } catch (error) {
+          if (this.notificationHandler) {
+            this.notificationHandler.showError('Erreur de session', 'Votre session a expiré, veuillez vous reconnecter');
+          }
+          throw error;
+        } finally {
+          this.tokenRefreshPromise = null;
+        }
+      })();
+
+      return this.tokenRefreshPromise;
+    }
   }
 
   /**

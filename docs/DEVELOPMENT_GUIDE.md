@@ -27,7 +27,20 @@ successfuel/
 ├── docs/                           # Documentation
 ├── src-tauri/                      # Code Rust pour le backend Tauri
 ├── package.json                    # Dépendances et scripts
-└── svelte.config.js               # Configuration SvelteKit
+├── svelte.config.js               # Configuration SvelteKit
+└── src/lib/utils/                 # Utilitaires réutilisables
+    ├── index.ts                   # Export centralisé des utilitaires
+    ├── numbers.ts                 # Utilitaires pour les nombres et prix
+    ├── financial.ts               # Utilitaires pour les calculs financiers
+    ├── dates.ts                   # Utilitaires pour les dates
+    ├── locale.ts                  # Service de gestion des paramètres régionaux
+    ├── validation.ts              # Utilitaires de validation
+    ├── statistics.ts              # Utilitaires statistiques
+    ├── inventory.ts               # Utilitaires pour la gestion des stocks
+    ├── formulas.ts                # Formules métiers
+    ├── security.ts                # Utilitaires de sécurité
+    ├── exports.ts                 # Utilitaires pour les exports
+    └── helpers.ts                 # Utilitaires généraux
 ```
 
 ## Technologies utilisées
@@ -211,6 +224,88 @@ Le changement de langue se fait via la fonction `setLanguage` et met à jour imm
 - Toujours spécifier le module pour une meilleure organisation
 - Profiter de la réactivité automatique pour les changements dynamiques
 - Utiliser les fallbacks pour une meilleure expérience utilisateur
+
+## Système d'Utilitaires
+
+Le projet implémente un système d'utilitaires modulaire conçu pour les applications ERP comme SuccessFuel.
+
+### Architecture
+
+```
+src/lib/utils/
+├── index.ts           # Export centralisé des utilitaires fréquents
+├── numbers.ts         # Utilitaires pour la gestion des nombres et prix
+├── financial.ts       # Calculs financiers spécifiques à l'ERP
+├── dates.ts           # Gestion des dates avec support de la locale
+├── locale.ts          # Service de configuration locale (langue/devise)
+├── validation.ts      # Validation des données
+├── statistics.ts      # Calculs statistiques
+├── inventory.ts       # Gestion des stocks
+├── formulas.ts        # Formules métiers (barémage, etc.)
+├── security.ts        # Utilitaires de sécurité
+├── exports.ts         # Formatage pour exports
+└── helpers.ts         # Fonctions utilitaires générales
+```
+
+### Utilisation
+
+Le système d'utilitaires permet un accès centralisé aux fonctions fréquemment utilisées :
+
+```typescript
+// Pour les fonctions fréquentes
+import { formatCurrency, formatNumber, formatLocalDate } from "$lib/utils";
+
+// Pour les fonctions spécifiques
+import { calculateTax, calculateMargin } from "$lib/utils/financial";
+import { validateEmail, validateDateFormat } from "$lib/utils/validation";
+```
+
+### Fonctions fréquentes
+
+Le fichier `index.ts` exporte les fonctions les plus utilisées dans l'application :
+
+- `formatCurrency(value, currency?)`: Formate les valeurs monétaires avec la devise par défaut de l'utilisateur
+- `formatNumber(value, decimals?, locale?)`: Formate les nombres avec les séparateurs de milliers
+- `formatPercent(value, locale?)`: Formate les pourcentages
+- `formatLocalDate(date, locale?)`: Formate les dates selon la locale de l'utilisateur
+- `formatDateTime(date, locale?)`: Formate les dates et heures selon la locale de l'utilisateur
+- `roundCurrency(value)`: Arrondit les valeurs monétaires à 2 décimales
+- `calculatePercent(value, percent)`: Calcule un pourcentage
+
+### Gestion des paramètres régionaux
+
+Le service `locale.ts` gère automatiquement les préférences régionales de l'utilisateur :
+
+- Lit la langue depuis la clé `language` dans localStorage
+- Lit la devise depuis la clé `currency` dans localStorage
+- Fournit des valeurs par défaut (français, XOF)
+- Permet la mise à jour et la persistance des paramètres
+
+```typescript
+import { getCurrentCurrency, getCurrentLocale, updateLocaleSettings } from "$lib/utils";
+
+// Utiliser les paramètres actuels de l'utilisateur
+const currency = getCurrentCurrency();
+const locale = getCurrentLocale();
+
+// Mettre à jour les paramètres
+await updateLocaleSettings('en', 'USD');
+```
+
+### Intégration avec l'application
+
+Les utilitaires sont conçus pour s'intégrer facilement avec le reste de l'application :
+
+- Les fonctions de formatage utilisent automatiquement les paramètres régionaux de l'utilisateur
+- Support pour la devise et la langue stockées dans localStorage
+- Fonctions optimisées pour les besoins spécifiques des ERP (gestion de carburants, stocks, etc.)
+
+### Bonnes pratiques
+
+- Utiliser les fonctions de formatage (`formatCurrency`, `formatNumber`) pour une cohérence visuelle
+- Préférer les imports depuis le fichier central `$lib/utils` pour les fonctions fréquentes
+- Utiliser les paramètres régionaux par défaut pour une expérience utilisateur cohérente
+- Éviter les formats codés en dur pour les prix, dates et nombres
 
 ## Communication avec l'API Backend
 

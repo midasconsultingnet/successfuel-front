@@ -4,6 +4,9 @@
   import { stationService } from '$lib/services/StationService';
   import { fuelService, type StationFuelPrice, type Fuel } from '$lib/services/FuelService';
   import { tankService, type Tank } from '$lib/services/TankService';
+  import { tankInitialStockService, type TankInitialStock } from '$lib/services/TankInitialStockService';
+  import { formatCurrency, formatNumber, roundCurrency } from '$lib/utils/numbers';
+  //import { getCurrentCurrency, getCurrentLocale } from '$lib/utils/locale';
   import { i18nStore } from '$lib/i18n';
   import Translate from '$lib/i18n/Translate.svelte';
   import { Button } from '$lib/components/ui/button';
@@ -48,7 +51,7 @@
   let availableFuels = $state<Fuel[]>([]);
   let tanks = $state<Tank[]>([]);
   let pumps = $state<any[]>([]);
-  let initialStocks = $state<any[]>([]);
+  let initialStocks = $state<TankInitialStock[]>([]);
 
   // États pour le formulaire d'ajout de carburant
   let showAddFuelDialog = $state(false);
@@ -76,6 +79,14 @@
   let calibrationPoints = $state<{hauteur: number, volume: number}[]>([]);
   let currentCalibrationHeight = $state(0);
   let currentCalibrationVolume = $state(0);
+
+  // États pour la gestion des stocks initiaux
+  let selectedTankForStock = $state<string>('');
+  let initialTankLevel = $state<string>('');
+  let editingStock = $state<TankInitialStock | null>(null);
+  let editInitialLevel = $state<string>('');
+  let showEditStockDialog = $state(false);
+  let showAddStockDialog = $state(false);
 
   // Fonctions pour réinitialiser les champs des dialogues
   function resetAddTankFields() {
@@ -119,9 +130,22 @@
       availableFuels = availableFuelsData;
       tanks = tanksData;
 
-      // Pour l'instant, on simule les données pour les autres onglets
-      // pumps = [];
-      // initialStocks = [];
+      // Charger les états initiaux pour chaque cuve
+      const initialStocksData: TankInitialStock[] = [];
+      for (const tank of tanks) {
+        try {
+          const initialStock = await tankInitialStockService.getTankInitialStock(tank.id);
+          initialStocksData.push(initialStock);
+        } catch (err) {
+          // Si l'état initial n'existe pas (404), on continue sans erreur
+          // C'est normal et signifie que la cuve n'a pas encore d'état initial
+          if ((err as any).status !== 404) {
+            console.error(`Erreur lors du chargement de l'état initial pour la cuve ${tank.id}:`, err);
+          }
+        }
+      }
+
+      initialStocks = initialStocksData;
 
     } catch (err) {
       console.error('Erreur lors du chargement des données d\'infrastructure:', err);
@@ -723,6 +747,126 @@
     editTankCalibrationInput = '';
     editTankError = null;
   }
+
+  // Fonction pour initialiser un stock pour une cuve
+  async function addInitialStock() {
+    try {
+      // Vérifier que les champs sont valides
+      if (!selectedTankForStock) {
+        throw new Error(get(i18nStore).resources?.configuration?.select_tank || 'Veuillez sélectionner une cuve');
+      }
+
+      // Convertir en nombre et vérifier la validité
+      const levelValue = Number(initialTankLevel);
+      if (isNaN(levelValue) || levelValue < 0) {
+        throw new Error(get(i18nStore).resources?.configuration?.invalid_initial_level || 'Veuillez entrer un niveau initial valide');
+      }
+
+      // Vérifier que la cuve n'a pas déjà un stock initial
+      if (initialStocks.some(stock => stock.cuve_id === selectedTankForStock)) {
+        throw new Error(get(i18nStore).resources?.configuration?.tank_already_has_initial_stock || 'Cette cuve a déjà un stock initial');
+      }
+
+      const requestData = {
+        hauteur_jauge_initiale: levelValue
+      };
+
+      const newInitialStock = await tankInitialStockService.createTankInitialStock(selectedTankForStock, requestData);
+
+      // Ajouter le nouvel état initial à la liste
+      initialStocks = [...initialStocks, newInitialStock];
+
+      // Réinitialiser le formulaire
+      selectedTankForStock = '';
+      initialTankLevel = '';
+
+      console.log('Stock initial ajouté avec succès:', newInitialStock);
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout du stock initial:', err);
+      error = 'Impossible d\'ajouter le stock initial: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour préparer l'édition d'un stock initial
+  function prepareEditStock(stock: TankInitialStock) {
+    editingStock = stock;
+    editInitialLevel = stock.hauteur_jauge_initiale.toString();
+    showEditStockDialog = true;
+  }
+
+  // Fonction pour modifier le stock initial d'une cuve
+  async function updateInitialStock() {
+    try {
+      if (!editingStock) {
+        throw new Error(get(i18nStore).resources?.configuration?.invalid_initial_level || 'Aucun stock à éditer');
+      }
+
+      // Convertir en nombre et vérifier la validité
+      const levelValue = Number(editInitialLevel);
+      if (isNaN(levelValue) || levelValue < 0) {
+        throw new Error(get(i18nStore).resources?.configuration?.invalid_initial_level || 'Veuillez entrer un niveau initial valide');
+      }
+
+      const requestData = {
+        hauteur_jauge_initiale: levelValue
+      };
+
+      const updatedStock = await tankInitialStockService.updateTankInitialStock(editingStock.cuve_id, requestData);
+
+      // Mettre à jour la liste des stocks initiaux en préservant les données imbriquées
+      // Si la mise à jour ne retourne pas la structure complète, on préserve les données existantes
+      initialStocks = initialStocks.map(stock => {
+        if (stock.id === updatedStock.id) {
+          // On fusionne les données de la mise à jour avec les données existantes
+          return {
+            ...stock, // Conserver les données existantes (y compris cuve et cuve.carburant)
+            ...updatedStock // Mettre à jour avec les nouvelles données de la réponse API
+          };
+        }
+        return stock;
+      });
+
+      console.log('Stock initial mis à jour avec succès:', updatedStock);
+    } catch (err) {
+      console.error('Erreur lors de la mise à jour du stock initial:', err);
+      error = 'Impossible de mettre à jour le stock initial: ' + (err as Error).message;
+    } finally {
+      // Toujours fermer la boîte de dialogue, même en cas d'erreur
+      showEditStockDialog = false;
+      editingStock = null;
+    }
+  }
+
+  // Fonction pour supprimer un stock initial
+  async function removeInitialStock(stockId: string, tankId: string) {
+    try {
+      await tankInitialStockService.deleteTankInitialStock(tankId);
+
+      // Retirer le stock initial de la liste
+      initialStocks = initialStocks.filter(stock => stock.id !== stockId);
+
+      console.log('Stock initial supprimé avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la suppression du stock initial:', err);
+      error = 'Impossible de supprimer le stock initial: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour calculer la valorisation financière d'un stock initial
+  function calculateValuation(stock: TankInitialStock): number {
+    // Trouver le prix d'achat du carburant de cette cuve
+    const fuelId = stock.cuve?.carburant?.id;
+    const stationFuel = stationFuels.find(f => f.carburant_id === fuelId);
+
+    if (!stationFuel || !stock.volume_initial_calcule) {
+      return 0; // Retourner 0 si aucune donnée n'est disponible
+    }
+
+    // Calculer la valorisation: volume * prix d'achat
+    const valuation = stock.volume_initial_calcule * stationFuel.prix_achat;
+    // Utiliser l'utilitaire d'arrondi monétaire
+    return roundCurrency(valuation);
+  }
 </script>
 
 <div class="space-y-6">
@@ -826,13 +970,13 @@
                       <Label>
                         <Translate key="purchase_price" module="configuration" fallback="Prix d'achat" />
                       </Label>
-                      <p>{fuel.prix_achat} XOF</p>
+                      <p>{formatCurrency(fuel.prix_achat)}</p>
                     </div>
                     <div>
                       <Label>
                         <Translate key="sale_price" module="configuration" fallback="Prix de vente" />
                       </Label>
-                      <p>{fuel.prix_vente} XOF</p>
+                      <p>{formatCurrency(fuel.prix_vente)}</p>
                     </div>
                     <div class="flex justify-end space-x-2">
                       <Button
@@ -1066,7 +1210,7 @@
                             <Label>
                               <Translate key="capacity" module="configuration" fallback="Capacité" />
                             </Label>
-                            <p>{tank.capacite_maximale} L</p>
+                            <p>{formatNumber(tank.capacite_maximale, 0)} L</p>
                           </div>
                           <div>
                             <Label>
@@ -1204,7 +1348,7 @@
                                 <Select.Content>
                                   {#each stationFuels as fuel}
                                     <Select.Item value={fuel.carburant_id}>
-                                      {fuel.carburant_libelle} ({fuel.carburant_code}) - {fuel.prix_achat}/{fuel.prix_vente}
+                                      {fuel.carburant_libelle} ({fuel.carburant_code}) - {formatCurrency(fuel.prix_achat)}/{formatCurrency(fuel.prix_vente)}
                                     </Select.Item>
                                   {/each}
                                 </Select.Content>
@@ -1291,8 +1435,8 @@
                                     <tbody>
                                       {#each calibrationPoints as point, i}
                                         <tr class={i % 2 === 0 ? 'bg-background' : 'bg-muted/50'}>
-                                          <td class="p-1">{point.hauteur}</td>
-                                          <td class="p-1" class:inconsistent={inconsistentPoints.includes(i)}>{point.volume}</td>
+                                          <td class="p-1">{formatNumber(point.hauteur)}</td>
+                                          <td class="p-1" class:inconsistent={inconsistentPoints.includes(i)}>{formatNumber(point.volume)}</td>
                                           <td class="p-1">
                                             <Button
                                               variant="ghost"
@@ -1426,7 +1570,7 @@
                                 <Select.Content>
                                   {#each stationFuels as fuel}
                                     <Select.Item value={fuel.carburant_id}>
-                                      {fuel.carburant_libelle} ({fuel.carburant_code}) - {fuel.prix_achat}/{fuel.prix_vente}
+                                      {fuel.carburant_libelle} ({fuel.carburant_code}) - {formatCurrency(fuel.prix_achat)}/{formatCurrency(fuel.prix_vente)}
                                     </Select.Item>
                                   {/each}
                                 </Select.Content>
@@ -1513,8 +1657,8 @@
                                     <tbody>
                                       {#each editCalibrationPoints as point, i}
                                         <tr class={i % 2 === 0 ? 'bg-background' : 'bg-muted/50'}>
-                                          <td class="p-1">{point.hauteur}</td>
-                                          <td class="p-1" class:inconsistent={inconsistentEditPoints.includes(i)}>{point.volume}</td>
+                                          <td class="p-1">{formatNumber(point.hauteur)}</td>
+                                          <td class="p-1" class:inconsistent={inconsistentEditPoints.includes(i)}>{formatNumber(point.volume)}</td>
                                           <td class="p-1">
                                             <Button
                                               variant="ghost"
@@ -1660,7 +1804,13 @@
                     <Translate key="tank" module="configuration" fallback="Cuve" />
                   </TableHead>
                   <TableHead>
+                    <Translate key="fuel_type" module="configuration" fallback="Type de carburant" />
+                  </TableHead>
+                  <TableHead>
                     <Translate key="initial_level" module="configuration" fallback="Niveau initial" />
+                  </TableHead>
+                  <TableHead>
+                    <Translate key="volume" module="configuration" fallback="Volume" />
                   </TableHead>
                   <TableHead>
                     <Translate key="valuation" module="configuration" fallback="Valorisation" />
@@ -1674,16 +1824,25 @@
                 {#each initialStocks as stock (stock.id)}
                   <TableRow>
                     <TableCell>
-                      {tanks.find(t => t.id === stock.tank_id)?.nom || stock.tank_id}
+                      {stock.cuve?.nom || stock.cuve_id}
                     </TableCell>
-                    <TableCell>{stock.initial_level} L</TableCell>
-                    <TableCell>{stock.valuation} XOF</TableCell>
+                    <TableCell>
+                      {stock.cuve?.carburant?.libelle || 'Carburant non défini'}
+                    </TableCell>
+                    <TableCell>{stock.hauteur_jauge_initiale} cm</TableCell>
+                    <TableCell>{stock.volume_initial_calcule} L</TableCell>
+                    <TableCell>{formatCurrency(calculateValuation(stock))}</TableCell>
                     <TableCell class="text-right">
                       <div class="flex justify-end space-x-2">
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" onclick={() => prepareEditStock(stock)}>
                           <Translate key="edit" module="common" fallback="Éditer" />
                         </Button>
-                        <Button variant="outline" size="sm" class="text-destructive border-destructive">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          class="text-destructive border-destructive"
+                          onclick={() => removeInitialStock(stock.id, stock.cuve_id)}
+                        >
                           <Translate key="delete" module="common" fallback="Supprimer" />
                         </Button>
                       </div>
@@ -1692,10 +1851,130 @@
                 {/each}
               </TableBody>
             </Table>
-            
-            <Button class="mt-4 w-full">
-              <Translate key="add_initial_stock" module="configuration" fallback="Ajouter un stock initial" />
-            </Button>
+
+            {#if tanks.length > 0}
+              <Dialog bind:open={showAddStockDialog}>
+                <DialogTrigger>
+                  <Button class="w-full">
+                    <Translate key="add_initial_stock" module="configuration" fallback="Ajouter un stock initial" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent class="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>
+                      <Translate key="add_initial_stock" module="configuration" fallback="Ajouter un stock initial" />
+                    </DialogTitle>
+                    <DialogDescription>
+                      <Translate key="select_tank_and_level" module="configuration" fallback="Sélectionnez une cuve et entrez le niveau initial" />
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div class="space-y-4 py-4">
+                    <div class="space-y-2">
+                      <Label for="tank-select">
+                        <Translate key="tank" module="configuration" fallback="Cuve" />
+                      </Label>
+                      <Select.Root
+                        type="single"
+                        bind:value={selectedTankForStock}
+                      >
+                        <Select.Trigger id="tank-select" class="w-full">
+                          <span data-slot="select-value">
+                            {selectedTankForStock
+                              ? tanks.find(t => t.id === selectedTankForStock)?.nom + ' (' + tanks.find(t => t.id === selectedTankForStock)?.code + ') - ' + (tanks.find(t => t.id === selectedTankForStock)?.carburant?.libelle || 'Carburant non défini')
+                              : get(i18nStore).resources?.configuration?.select_tank || 'Sélectionner une cuve'}
+                          </span>
+                        </Select.Trigger>
+                        <Select.Content>
+                          {#each tanks.filter(t => !initialStocks.some(stock => stock.cuve_id === t.id)) as tank}
+                            <Select.Item value={tank.id}>
+                              {tank.nom} ({tank.code}) - {tank.carburant?.libelle || 'Carburant non défini'}
+                            </Select.Item>
+                          {/each}
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="initial-level">
+                        <Translate key="initial_level" module="configuration" fallback="Niveau initial (cm)" />
+                      </Label>
+                      <Input
+                        id="initial-level"
+                        type="number"
+                        bind:value={initialTankLevel}
+                        placeholder={get(i18nStore).resources?.configuration?.initial_level_placeholder || 'Hauteur en cm'}
+                      />
+                    </div>
+                  </div>
+                  <div class="flex justify-end space-x-2">
+                    <Button
+                      variant="outline"
+                      onclick={() => {
+                        showAddStockDialog = false;
+                        selectedTankForStock = '';
+                        initialTankLevel = '';
+                      }}
+                    >
+                      <Translate key="cancel" module="common" fallback="Annuler" />
+                    </Button>
+                    <Button
+                      disabled={!selectedTankForStock || initialTankLevel === ''}
+                      onclick={addInitialStock}
+                    >
+                      <Translate key="set_initial_stock" module="configuration" fallback="Définir le stock initial" />
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            {/if}
+
+            <!-- Dialogue d'édition d'un stock initial -->
+            {#if editingStock}
+              <Dialog bind:open={showEditStockDialog}>
+                <DialogContent class="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>
+                      <Translate key="edit_initial_stock" module="configuration" fallback="Éditer le stock initial" />
+                    </DialogTitle>
+                    <DialogDescription>
+                      {editingStock.cuve?.nom || editingStock.cuve_id}
+                      ({editingStock.cuve?.carburant?.libelle || 'Carburant non défini'})
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div class="space-y-4 py-4">
+                    <div class="space-y-2">
+                      <Label for="edit-initial-level">
+                        <Translate key="initial_level" module="configuration" fallback="Niveau initial (cm)" />
+                      </Label>
+                      <Input
+                        id="edit-initial-level"
+                        type="number"
+                        bind:value={editInitialLevel}
+                        placeholder={get(i18nStore).resources?.configuration?.initial_level_placeholder || 'Hauteur en cm'}
+                      />
+                    </div>
+                    <div class="text-sm text-muted-foreground">
+                      <p>
+                        <Translate key="current_volume" module="configuration" fallback="Volume actuel:" /> {editingStock.volume_initial_calcule} L
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex justify-end space-x-2">
+                    <Button
+                      variant="outline"
+                      onclick={() => showEditStockDialog = false}
+                    >
+                      <Translate key="cancel" module="common" fallback="Annuler" />
+                    </Button>
+                    <Button
+                      onclick={updateInitialStock}
+                      disabled={isNaN(Number(editInitialLevel)) || Number(editInitialLevel) < 0}
+                    >
+                      <Translate key="save" module="common" fallback="Sauvegarder" />
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            {/if}
           </CardContent>
         </Card>
       </TabsContent>

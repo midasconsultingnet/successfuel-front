@@ -91,20 +91,20 @@ class ApiService extends HttpClient {
   }
 
   // Surcharge des méthodes pour gérer automatiquement le rafraîchissement du token
-  async get<T>(endpoint: string, config: HttpRequestConfig = {}): Promise<T> {
-    return authService.handleRequestWithAuth(() => super.get<T>(endpoint, config));
+  async get<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
+    return authService.handleRequestWithAuth(() => super.get<T>(endpoint, config, customFetch));
   }
 
-  async post<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}): Promise<T> {
-    return authService.handleRequestWithAuth(() => super.post<T>(endpoint, data, config));
+  async post<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
+    return authService.handleRequestWithAuth(() => super.post<T>(endpoint, data, config, customFetch));
   }
 
-  async put<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}): Promise<T> {
-    return authService.handleRequestWithAuth(() => super.put<T>(endpoint, data, config));
+  async put<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
+    return authService.handleRequestWithAuth(() => super.put<T>(endpoint, data, config, customFetch));
   }
 
-  async delete<T>(endpoint: string, config: HttpRequestConfig = {}): Promise<T> {
-    return authService.handleRequestWithAuth(() => super.delete<T>(endpoint, config));
+  async delete<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
+    return authService.handleRequestWithAuth(() => super.delete<T>(endpoint, config, customFetch));
   }
 
   // Nettoyage des ressources
