@@ -6,7 +6,7 @@
 
 - [About](https://shadcn-svelte.com/docs/about.md): Powered by amazing open source projects.
 - [Changelog](https://shadcn-svelte.com/docs/changelog.md): Latest updates and announcements.
-- [CLI](https://shadcn-svelte.com/docs/cli.md): Use the CLI to add components to your project.
+- [shadcn-svelte](https://shadcn-svelte.com/docs/cli.md): Use the shadcn-svelte CLI to add components to your project.
 - [components.json](https://shadcn-svelte.com/docs/components-json.md): Configuration for your project.
 - [JavaScript](https://shadcn-svelte.com/docs/javascript.md): How to use shadcn-svelte with JavaScript.
 - [Legacy Docs](https://shadcn-svelte.com/docs/legacy.md): View the legacy docs for shadcn-svelte and Tailwind v3.

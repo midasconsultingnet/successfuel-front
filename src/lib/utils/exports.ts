@@ -63,7 +63,7 @@ export function formatForExport<T>(data: T[], formatOptions?: FormatOptions): T[
   return data.map(item => {
     const formattedItem: any = {};
     
-    for (const [key, value] of Object.entries(item)) {
+    for (const [key, value] of Object.entries(item as Record<string, any>)) {
       if (options.customFormatters && options.customFormatters[key]) {
         formattedItem[key] = options.customFormatters[key](value);
       } else if (value instanceof Date) {

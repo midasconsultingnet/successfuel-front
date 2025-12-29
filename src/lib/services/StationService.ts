@@ -59,7 +59,15 @@ class StationService {
    * Récupérer une station par son ID
    */
   async getStationById(id: string, customFetch?: typeof fetch): Promise<Station> {
-    return await apiService.get<Station>(`/compagnie/stations/${id}`, undefined, customFetch);
+    // Si un customFetch est fourni, créer une configuration pour l'utiliser
+    // mais s'assurer que les headers d'authentification sont inclus
+    if (customFetch) {
+      // Pour l'instant, on continue d'utiliser le customFetch mais on s'assure que les headers sont inclus
+      // dans l'implémentation d'apiService, ce qui est déjà le cas normalement
+      return await apiService.get<Station>(`/compagnie/stations/${id}`, undefined, customFetch);
+    } else {
+      return await apiService.get<Station>(`/compagnie/stations/${id}`);
+    }
   }
 
   /**
@@ -81,6 +89,13 @@ class StationService {
    */
   async deleteStation(id: string): Promise<void> {
     return await apiService.delete<void>(`/compagnie/stations/${id}`);
+  }
+
+  /**
+   * Activer une station
+   */
+  async activateStation(id: string): Promise<void> {
+    return await apiService.put<void>(`/compagnie/stations/${id}/activate`, {});
   }
 }
 

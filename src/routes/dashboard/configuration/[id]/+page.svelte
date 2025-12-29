@@ -12,6 +12,8 @@
   import { get } from 'svelte/store';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { setConfigurationContext } from '$lib/contexts/configurationContext';
+  import { configurationStore, type ConfigurationCompletion } from '$lib/stores/configurationStore';
 
   // Récupérer les données de la page
   let stationId = $state<string>('');
@@ -51,7 +53,13 @@
       icon: '⛽',
       route: (id: string) => `/dashboard/configuration/${id}/infrastructure`,
       completed: false,
-      apiField: 'carburants'
+      details: {
+        fuel: false,
+        tanks: false,
+        pumps: false,
+        stock: false,
+        overall: false
+      }
     },
     {
       id: 'partners',
@@ -60,7 +68,11 @@
       icon: '👥',
       route: (id: string) => `/dashboard/configuration/${id}/partners`,
       completed: false,
-      apiField: 'fournisseurs'
+      details: {
+        suppliers: false,
+        customers: false,
+        overall: false
+      }
     },
     {
       id: 'employees',
@@ -69,7 +81,10 @@
       icon: '👷',
       route: (id: string) => `/dashboard/configuration/${id}/employees`,
       completed: false,
-      apiField: 'employes'
+      details: {
+        employees: false,
+        overall: false
+      }
     },
     {
       id: 'finances',
@@ -78,7 +93,11 @@
       icon: '💰',
       route: (id: string) => `/dashboard/configuration/${id}/finances`,
       completed: false,
-      apiField: 'tresorerie'
+      details: {
+        treasuries: false,
+        payment_methods: false,
+        overall: false
+      }
     },
     {
       id: 'balance',
@@ -87,7 +106,12 @@
       icon: '📋',
       route: (id: string) => `/dashboard/configuration/${id}/balance`,
       completed: false,
-      apiField: 'soldes'
+      details: {
+        assets: false,
+        receivables: false,
+        debts: false,
+        overall: false
+      }
     }
   ]);
 
@@ -102,17 +126,28 @@
 
       // Utiliser les données du layout pour éviter le double appel API
       // Mise à jour de l'état de configuration en fonction des données du layout
+      const completionData = stationData.config?.completion || {};
+
+      // Charger les données du store pour combiner avec les données du layout
+      const storeConfig = configurationStore.getStationConfig(stationId);
+
+      // Combiner les données du layout avec celles du store (les données du store ont priorité)
+      const combinedData = {
+        ...completionData,
+        ...(storeConfig || {})
+      };
+
       configurationState = {
         id: `config_${stationId}`, // Utiliser un ID basé sur l'ID de la station
         station_id: stationId,
         station_name: stationData.name, // Données provenant du layout
         station_code: stationData.code, // Données provenant du layout
         station_address: stationData.address, // Données provenant du layout
-        infrastructure_complete: stationData.config?.completion?.carburants || false,
-        partners_complete: stationData.config?.completion?.fournisseurs || false,
-        employees_complete: stationData.config?.completion?.employes || false,
-        finances_complete: stationData.config?.completion?.tresorerie || false,
-        balance_complete: stationData.config?.completion?.soldes || false,
+        infrastructure_complete: combinedData.infrastructure?.overall || false,
+        partners_complete: combinedData.partners?.overall || false,
+        employees_complete: combinedData.employees?.overall || false,
+        finances_complete: combinedData.finances?.overall || false,
+        balance_complete: combinedData.balance?.overall || false,
         is_complete: false, // À déterminer selon les autres complétions
         created_at: stationData.created_at,
         updated_at: stationData.updated_at
@@ -129,7 +164,7 @@
       }
 
       // Mise à jour des statuts de complétion
-      updateCompletionStatus();
+      updateCompletionStatus(combinedData);
 
       // Calcul du progrès global
       calculateProgress();
@@ -154,7 +189,8 @@
         updated_at: new Date().toISOString()
       };
 
-      updateCompletionStatus();
+      // Mise à jour des statuts de complétion avec des données par défaut
+      updateCompletionStatus({});
       calculateProgress();
     } finally {
       loading = false;
@@ -163,26 +199,53 @@
   }
   
   // Mise à jour des statuts de complétion
-  function updateCompletionStatus() {
-    if (!configurationState || !configSteps) return;
+  function updateCompletionStatus(completionData: any) {
+    if (!configSteps) return;
 
-    // Mettre à jour les étapes en fonction des champs API correspondants
+    // Mettre à jour les étapes en fonction des données de complétion
     configSteps.forEach(step => {
-      switch (step.apiField) {
-        case 'carburants':
-          step.completed = configurationState?.infrastructure_complete || false;
+      switch (step.id) {
+        case 'infrastructure':
+          step.completed = completionData.infrastructure?.overall || false;
+          step.details = {
+            fuel: completionData.infrastructure?.fuel || false,
+            tanks: completionData.infrastructure?.tanks || false,
+            pumps: completionData.infrastructure?.pumps || false,
+            stock: completionData.infrastructure?.stock || false,
+            overall: completionData.infrastructure?.overall || false
+          };
           break;
-        case 'fournisseurs':
-          step.completed = configurationState?.partners_complete || false;
+        case 'partners':
+          step.completed = completionData.partners?.overall || false;
+          step.details = {
+            suppliers: completionData.partners?.suppliers || false,
+            customers: completionData.partners?.customers || false,
+            overall: completionData.partners?.overall || false
+          };
           break;
-        case 'employes':
-          step.completed = configurationState?.employees_complete || false;
+        case 'employees':
+          step.completed = completionData.employees?.overall || false;
+          step.details = {
+            employees: completionData.employees?.employees || false,
+            overall: completionData.employees?.overall || false
+          };
           break;
-        case 'tresorerie':
-          step.completed = configurationState?.finances_complete || false;
+        case 'finances':
+          step.completed = completionData.finances?.overall || false;
+          step.details = {
+            treasuries: completionData.finances?.treasuries || false,
+            payment_methods: completionData.finances?.payment_methods || false,
+            overall: completionData.finances?.overall || false
+          };
           break;
-        case 'soldes':
-          step.completed = configurationState?.balance_complete || false;
+        case 'balance':
+          step.completed = completionData.balance?.overall || false;
+          step.details = {
+            assets: completionData.balance?.assets || false,
+            receivables: completionData.balance?.receivables || false,
+            debts: completionData.balance?.debts || false,
+            overall: completionData.balance?.overall || false
+          };
           break;
       }
     });
@@ -190,8 +253,28 @@
   
   // Calcul du progrès global
   function calculateProgress() {
+    // Calcul du progrès basé sur les étapes complètes
     const completedSteps = configSteps.filter(step => step.completed).length;
     progress = (completedSteps / configSteps.length) * 100;
+  }
+
+  // Calcul du progrès détaillé pour une étape spécifique
+  function calculateStepProgress(stepId: string): { completed: number, total: number, percentage: number } {
+    const step = configSteps.find(s => s.id === stepId);
+    if (!step || !step.details) {
+      return { completed: 0, total: 0, percentage: 0 };
+    }
+
+    // Compter les sous-étapes complétées (excluant le champ 'overall')
+    const details = { ...step.details };
+    delete details.overall; // Exclure le champ 'overall' du calcul
+
+    const entries = Object.entries(details);
+    const total = entries.length;
+    const completed = entries.filter(([_, value]) => value === true).length;
+    const percentage = total > 0 ? (completed / total) * 100 : 0;
+
+    return { completed, total, percentage };
   }
   
   // Détermine si une étape peut être accédée (dépend de l'étape précédente)
@@ -213,6 +296,44 @@
       goto(step.route(stationId));
     }
   }
+
+  // Fonction pour mettre à jour la configuration
+  function updateConfiguration(newCompletionData: any) {
+    // Mettre à jour les données de station
+    if (stationData && stationData.config) {
+      stationData.config.completion = {
+        ...stationData.config.completion,
+        ...newCompletionData
+      };
+    }
+
+    // Mettre à jour le store de configuration
+    for (const [key, value] of Object.entries(newCompletionData)) {
+      const stepKey = key as keyof ConfigurationCompletion;
+      configurationStore.updatePart(stationId, stepKey, value);
+    }
+
+    // Mettre à jour l'état de configuration
+    updateCompletionStatus(newCompletionData);
+
+    // Recalculer la progression
+    calculateProgress();
+  }
+
+  // Fonction pour obtenir la configuration actuelle
+  function getConfiguration(): ConfigurationState | null {
+    return configurationState;
+  }
+
+  // Configuration du contexte
+  $effect(() => {
+    if (stationId && stationData) {
+      setConfigurationContext({
+        updateConfiguration,
+        getConfiguration
+      });
+    }
+  });
 
   console.log('Composant de configuration monté');
 </script>
@@ -302,16 +423,37 @@
             </CardHeader>
             <CardContent>
               <div class="flex justify-between items-center">
-                <Badge variant={step.completed ? "default" : "secondary"}>
-                  {#if step.completed}
-                    <Translate key="completed" module="configuration" fallback="Complété" />
-                  {:else}
-                    <Translate key="pending" module="configuration" fallback="En attente" />
+                <div class="flex flex-col">
+                  <Badge variant={step.completed ? "default" : "secondary"}>
+                    {#if step.completed}
+                      <Translate key="completed" module="configuration" fallback="Complété" />
+                    {:else}
+                      <Translate key="pending" module="configuration" fallback="En attente" />
+                    {/if}
+                  </Badge>
+                  {#if !step.completed}
+                    <div class="text-xs text-muted-foreground mt-1">
+                      {#if step.id !== 'employees'} <!-- employees n'a qu'une seule sous-étape -->
+                        {#if step.id === 'partners'}
+                          {calculateStepProgress(step.id).completed}/
+                          {calculateStepProgress(step.id).total}
+                          <Translate key="suppliers_customers_setup" module="configuration" fallback="Fournisseurs/Clients" />
+                        {:else if step.id === 'balance'}
+                          {calculateStepProgress(step.id).completed}/
+                          {calculateStepProgress(step.id).total}
+                          <Translate key="balance_setup" module="configuration" fallback="Bilan" />
+                        {:else}
+                          {calculateStepProgress(step.id).completed}/
+                          {calculateStepProgress(step.id).total}
+                          <Translate key="configure" module="configuration" fallback="étapes" />
+                        {/if}
+                      {/if}
+                    </div>
                   {/if}
-                </Badge>
+                </div>
                 <Button
                   variant="outline"
-                  disabled={getStepDependency(step.id) !== null && !getStepDependency(step.id) && !step.completed}
+                  disabled={false}
                   onclick={() => navigateToStep(step.id)}
                 >
                   <Translate key="configure" module="configuration" fallback="Configurer" />
@@ -347,9 +489,10 @@
                 {/if}
               </p>
             </div>
-            <Button 
-              variant="default" 
+            <Button
+              variant="default"
               disabled={progress < 100}
+              onclick={() => goto(`/dashboard/configuration/${stationId}/resume`)}
             >
               <Translate key="activate_station" module="configuration" fallback="Activer la Station" />
             </Button>

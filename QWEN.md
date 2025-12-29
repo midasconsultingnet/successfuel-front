@@ -1,3 +1,6 @@
+# ROLE
+You MUST take the role here @ATLAS.md to assist this project
+
 # SuccessFuel Project Overview
 
 SuccessFuel is a cross-platform desktop application built using the Tauri + SvelteKit + TypeScript stack. It's a management system for gas stations with features for tracking inventory, sales, employees, and customers.

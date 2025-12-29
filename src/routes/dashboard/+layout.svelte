@@ -7,6 +7,7 @@
   import { page } from '$app/stores';
   import { get } from 'svelte/store';
   import { authStore } from '$lib/services/authStore';
+  import SessionExpiredHandler from '$lib/components/auth/SessionExpiredHandler.svelte';
 
   let isAuthenticated = $state(false);
   let isLoading = $state(true);
@@ -29,16 +30,18 @@
   let { children } = $props();
 </script>
 
-{#if isLoading}
-  <div class="flex justify-center items-center h-screen">
-    <p>Chargement...</p>
-  </div>
-{:else if isAuthenticated}
-  <I18nProvider>
-    <main>
-      <DashboardLayout>
-        {@render children?.()}
-      </DashboardLayout>
-    </main>
-  </I18nProvider>
-{/if}
+<I18nProvider>
+  <SessionExpiredHandler />
+  {#if isLoading}
+    <div class="flex justify-center items-center h-screen">
+      <p>Chargement...</p>
+    </div>
+  {:else if isAuthenticated}
+    
+      <main>
+        <DashboardLayout>
+          {@render children?.()}
+        </DashboardLayout>
+      </main>
+  {/if}
+</I18nProvider>

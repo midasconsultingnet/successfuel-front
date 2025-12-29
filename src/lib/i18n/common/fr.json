@@ -1,6 +1,7 @@
 {
   "app_name": "SuccessFuel",
-  "description": "Gestion Intelligente de Station-service",
+  "app_description": "Gestion Intelligente de Station-service",
+  "description": "Description",
   "dashboard": "Tableau de bord",
   "settings": "Paramètres",
   "logout": "Se déconnecter",
@@ -39,6 +40,7 @@
   "actions": "Actions",
   "edit": "Éditer",
   "delete": "Supprimer",
+  "dissociate": "Dissocier",
   "cancel": "Annuler",
   "save": "Enregistrer",
   "loading": "Chargement...",
@@ -52,5 +54,9 @@
   "code_required": "Le code est requis",
   "address_required": "L'adresse est requise",
   "success": "Succès",
-  "error": "Erreur"
+  "error": "Erreur",
+  "or": "ou",
+  "phone": "Téléphone",
+  "receivable": "Créance",
+  "debt": "Dette"
 }

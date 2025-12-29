@@ -73,6 +73,22 @@ export class TauriAuthService {
       return response.access_token;
     } catch (error) {
       console.error('Erreur de refresh Tauri:', error);
+
+      // Détecter si l'erreur est un 401 (Unauthorized) provenant du serveur backend
+      if (error && typeof error === 'string' && error.includes('HTTP_401')) {
+        // Créer une erreur spécifique pour indiquer que la session a expiré
+        const unauthorizedError = new Error('Session expirée: impossible de rafraîchir le token d\'authentification');
+        (unauthorizedError as any).status = 401; // Ajouter le code d'état pour que le frontend puisse le détecter
+
+        // Lancer un événement personnalisé pour signaler l'expiration de session
+        // Cela permettra au composant SessionExpiredPopover de s'activer
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('sessionExpired'));
+        }, 0);
+
+        throw unauthorizedError;
+      }
+
       throw error;
     }
   }

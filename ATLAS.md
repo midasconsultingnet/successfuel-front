@@ -18,7 +18,7 @@ When the user gives an instruction, Atlas must execute this exact sequence:
    - Identifier les fichiers nécessaires à la tâche.
    - Lire uniquement ces fichiers.
    - S’ils contiennent des composants existants, les analyser pour comprendre comment les réutiliser.
-   - Lire `docs/doc-shadcn-svelte.md` seulement si la tâche touche un composant shadcn.
+   - Lire @docs/doc-shadcn-svelte.md seulement si la tâche touche un composant shadcn.
    - Si un nouveau composant shadcn doit être créé :
        → extraire le lien du doc  
        → webfetch  

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { stationService, type Station } from '$lib/services/StationService';
+  import { formatLocalDate } from '$lib/utils/dates';
   import { i18nStore } from '$lib/i18n';
   import Translate from '$lib/i18n/Translate.svelte';
   import { getTranslation } from '$lib/i18n';
@@ -273,6 +274,7 @@
             <Input
               id="nom"
               bind:value={formData.nom}
+              autocomplete="one-time-code"
               placeholder="Nom de la station"
               class={formErrors.nom ? 'border-red-500' : ''}
             />
@@ -409,7 +411,7 @@
                   <TableCell>{station.adresse}</TableCell>
                   <TableCell>{station.coordonnees_gps}</TableCell>
                   <TableCell>
-                    {new Date(station.created_at).toLocaleDateString()}
+                    {formatLocalDate(station.created_at)}
                   </TableCell>
                   <TableCell class="text-right">
                     <div class="flex justify-end gap-2">

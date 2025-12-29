@@ -146,7 +146,17 @@ class AuthService {
             // Si le refresh échoue avec un 401, effectuer une déconnexion locale immédiate
             if (response.status === 401) {
               this.localLogout();
-              throw new Error(`Erreur de rafraîchissement du token: ${response.status}`);
+              // Créer une erreur spécifique avec le statut pour que le store puisse la détecter
+              const unauthorizedError = new Error('Session expirée: impossible de rafraîchir le token d\'authentification');
+              (unauthorizedError as any).status = 401; // Ajouter le code d'état pour que le frontend puisse le détecter
+
+              // Lancer un événement personnalisé pour signaler l'expiration de session
+              // Cela permettra au composant SessionExpiredPopover de s'activer
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('sessionExpired'));
+              }, 0);
+
+              throw unauthorizedError;
             } else {
               // Si le refresh échoue pour une autre raison, déconnecter normalement
               await this.logout();
@@ -325,8 +335,17 @@ class AuthService {
           // effectuer une déconnexion locale immédiate
           if (refreshError.message && refreshError.message.includes('401')) {
             this.localLogout();
-            // Propager l'erreur pour que l'interface utilisateur puisse réagir
-            throw new Error('Session expirée: impossible de rafraîchir le token d\'authentification');
+            // Créer une erreur spécifique avec le statut pour que le store puisse la détecter
+            const unauthorizedError = new Error('Session expirée: impossible de rafraîchir le token d\'authentification');
+            (unauthorizedError as any).status = 401; // Ajouter le code d'état pour que le frontend puisse le détecter
+
+            // Lancer un événement personnalisé pour signaler l'expiration de session
+            // Cela permettra au composant SessionExpiredPopover de s'activer
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('sessionExpired'));
+            }, 0);
+
+            throw unauthorizedError;
           } else {
             // Si le refresh échoue pour une autre raison, déconnecter normalement
             await this.logout();

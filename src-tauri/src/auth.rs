@@ -76,7 +76,8 @@ pub async fn refresh_token(auth_state: State<'_, AuthState>) -> Result<LoginResp
         .map_err(|e| format!("Erreur de refresh: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Échec du refresh: {}", response.status()));
+        // Inclure le code d'état HTTP dans le message d'erreur pour permettre au frontend de le détecter
+        return Err(format!("Échec du refresh: HTTP_{}", response.status().as_u16()));
     }
 
     let refresh_response: LoginResponse = response

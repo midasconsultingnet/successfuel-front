@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import { get } from 'svelte/store';
   import { authStore } from '$lib/services/authStore';
+  import SessionExpiredHandler from '$lib/components/auth/SessionExpiredHandler.svelte';
 
   // Props
   let { children } = $props();

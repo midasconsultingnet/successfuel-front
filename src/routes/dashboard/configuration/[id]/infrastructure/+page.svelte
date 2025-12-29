@@ -4,6 +4,7 @@
   import { stationService } from '$lib/services/StationService';
   import { fuelService, type StationFuelPrice, type Fuel } from '$lib/services/FuelService';
   import { tankService, type Tank } from '$lib/services/TankService';
+  import { pumpService, type Pump } from '$lib/services/PumpService';
   import { tankInitialStockService, type TankInitialStock } from '$lib/services/TankInitialStockService';
   import { formatCurrency, formatNumber, roundCurrency } from '$lib/utils/numbers';
   //import { getCurrentCurrency, getCurrentLocale } from '$lib/utils/locale';
@@ -20,9 +21,11 @@
   import { Spinner } from '$lib/components/ui/spinner';
   import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '$lib/components/ui/dialog';
   import * as Select from '$lib/components/ui/select';
+  import { toast } from 'svelte-sonner';
   import { get } from 'svelte/store';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { configurationStore } from '$lib/stores/configurationStore';
 
   // Récupérer les données de la page
   let stationId = $state<string>('');
@@ -50,7 +53,7 @@
   let stationFuels = $state<StationFuelPrice[]>([]);
   let availableFuels = $state<Fuel[]>([]);
   let tanks = $state<Tank[]>([]);
-  let pumps = $state<any[]>([]);
+  let pumps = $state<Pump[]>([]);
   let initialStocks = $state<TankInitialStock[]>([]);
 
   // États pour le formulaire d'ajout de carburant
@@ -58,6 +61,19 @@
   let selectedFuelId = $state('');
   let purchasePrice = $state(0);
   let salePrice = $state(0);
+
+  // États pour le formulaire d'ajout de pompe
+  let showAddPumpDialog = $state(false);
+  let pumpNumber = $state('');
+  let pumpTankId = $state('');
+  let pumpInitialIndex = $state(0);
+
+  // États pour l'édition de pompe
+  let editingPump = $state<Pump | null>(null);
+  let editPumpNumber = $state('');
+  let editPumpTankId = $state('');
+  let editPumpInitialIndex = $state(0);
+  let showEditPumpDialog = $state(false);
 
   // États pour l'édition de carburant
   let editingFuel = $state<StationFuelPrice | null>(null);
@@ -87,6 +103,10 @@
   let editInitialLevel = $state<string>('');
   let showEditStockDialog = $state(false);
   let showAddStockDialog = $state(false);
+
+  // États pour le dialogue de validation de la configuration
+  let showValidationDialog = $state(false);
+  let validationResults = $state<any>(null);
 
   // Fonctions pour réinitialiser les champs des dialogues
   function resetAddTankFields() {
@@ -119,16 +139,18 @@
       console.log('Tentative de chargement des données pour la station:', stationId);
       loading = true;
 
-      // Charger les carburants de la station, les carburants disponibles et les cuves
-      const [stationFuelsData, availableFuelsData, tanksData] = await Promise.all([
+      // Charger les carburants de la station, les carburants disponibles, les cuves et les pistolets
+      const [stationFuelsData, availableFuelsData, tanksData, pumpsData] = await Promise.all([
         fuelService.getStationFuelPrices(stationId),
         fuelService.getFuels(),
-        tankService.getStationTanks(stationId)
+        tankService.getStationTanks(stationId),
+        pumpService.getStationPumps(stationId)
       ]);
 
       stationFuels = stationFuelsData;
       availableFuels = availableFuelsData;
       tanks = tanksData;
+      pumps = pumpsData;
 
       // Charger les états initiaux pour chaque cuve
       const initialStocksData: TankInitialStock[] = [];
@@ -162,18 +184,50 @@
   
   // Sauvegarder la configuration
   async function saveConfiguration() {
+    validationResults = validateConfiguration();
+    showValidationDialog = true;
+  }
+
+  // Fonction pour confirmer et sauvegarder la configuration
+  async function confirmAndSaveConfiguration() {
     try {
       if (!stationId) {
         throw new Error('ID de station manquant');
       }
 
-      // Pour l'instant, on simule la sauvegarde en attendant les vrais endpoints
-      console.log('Sauvegarde de la configuration d\'infrastructure pour la station:', stationId);
-      console.log({ stationFuels, tanks, pumps, initialStocks });
+      // Valider à nouveau la configuration avant de sauvegarder
+      const validation = validateConfiguration();
+      if (!validation.overall.isValid) {
+        throw new Error('La configuration ne satisfait pas aux conditions requises');
+      }
 
-      // Ici, vous appellerez réellement le service
-      // await configurationService.saveInfrastructureConfig(stationId, { stationFuels, tanks, pumps, initialStocks });
-      alert('Configuration sauvegardée avec succès (simulation)');
+      // Préparer les données de configuration à sauvegarder
+      const configToSave = {
+        completion: {
+          infrastructure: {
+            fuel: validation.fuel.isValid,
+            tanks: validation.tanks.isValid,
+            pumps: validation.pumps.isValid,
+            stock: validation.stock.isValid,
+            overall: validation.overall.isValid
+          }
+        }
+      };
+
+      // Sauvegarder la configuration via le service
+      const response = await configurationService.saveStationConfiguration(stationId, configToSave);
+
+      console.log('Configuration d\'infrastructure sauvegardée avec succès pour la station:', stationId);
+      console.log(configToSave);
+
+      // Mettre à jour la configuration dans le store global
+      configurationStore.updatePart(stationId, 'infrastructure', configToSave.completion.infrastructure);
+
+      // Fermer le dialogue de validation
+      showValidationDialog = false;
+
+      // Afficher un message de succès
+      toast.success(get(i18nStore).resources?.configuration?.infrastructure_config_saved || 'Configuration d\'infrastructure sauvegardée avec succès');
     } catch (err) {
       console.error('Erreur lors de la sauvegarde de la configuration:', err);
       error = 'Erreur lors de la sauvegarde de la configuration: ' + (err as Error).message;
@@ -278,16 +332,24 @@
         }
       );
 
+      // Compléter les informations du carburant avec celles de la liste des carburants disponibles
+      const availableFuel = availableFuels.find(f => f.id === updatedFuel.carburant_id);
+      const completeFuel = {
+        ...updatedFuel,
+        carburant_libelle: availableFuel?.libelle || editingFuel.carburant_libelle || '',
+        carburant_code: availableFuel?.code || editingFuel.carburant_code || ''
+      };
+
       // Mettre à jour le carburant dans la liste
       stationFuels = stationFuels.map(fuel =>
-        fuel.id === updatedFuel.id ? updatedFuel : fuel
+        fuel.id === updatedFuel.id ? completeFuel : fuel
       );
 
       // Réinitialiser l'état d'édition
       showEditDialog = false;
       editingFuel = null;
 
-      console.log('Carburant mis à jour avec succès:', updatedFuel);
+      console.log('Carburant mis à jour avec succès:', completeFuel);
     } catch (err) {
       console.error('Erreur lors de la mise à jour du carburant:', err);
       error = 'Impossible de mettre à jour le carburant: ' + (err as Error).message;
@@ -388,6 +450,179 @@
     return grouped;
   }
 
+  // Fonction pour grouper les pompes par cuve
+  function groupPumpsByTank() {
+    const grouped: { [key: string]: Pump[] } = {};
+
+    pumps.forEach(pump => {
+      // Utiliser l'ID de la cuve comme clé de regroupement pour éviter les duplications
+      const tankKey = pump.cuve_id;
+
+      if (!grouped[tankKey]) {
+        grouped[tankKey] = [];
+      }
+      grouped[tankKey].push(pump);
+    });
+
+    // Convertir l'objet pour qu'il ait le format approprié pour l'affichage (nom de la cuve comme clé)
+    const result: { [key: string]: Pump[] } = {};
+    Object.keys(grouped).forEach(key => {
+      // Trouver la cuve correspondante dans la liste des cuves pour obtenir son nom
+      const tank = tanks.find(t => t.id === key);
+      const tankName = tank?.nom || `Cuve ${key?.substring(0, 8) || 'inconnue'}`;
+      result[tankName] = grouped[key];
+    });
+
+    return result;
+  }
+
+  // Fonction de validation globale de la configuration
+  function validateConfiguration() {
+    const validation = {
+      fuel: { isValid: false, message: '', details: [] as string[] },
+      tanks: { isValid: false, message: '', details: [] as any[] },
+      pumps: { isValid: false, message: '', details: [] as any[] },
+      stock: { isValid: false, message: '', details: [] as any[] },
+      overall: { isValid: false, message: '' }
+    };
+
+    // Validation de l'étape Carburants
+    if (stationFuels.length === 0) {
+      validation.fuel.isValid = false;
+      validation.fuel.message = 'Aucun carburant configuré';
+      validation.fuel.details = ['Veuillez ajouter au moins un carburant avec ses prix d\'achat et de vente'];
+    } else {
+      const invalidFuels = stationFuels.filter(fuel =>
+        fuel.prix_achat >= fuel.prix_vente || fuel.prix_achat <= 0 || fuel.prix_vente <= 0
+      );
+
+      if (invalidFuels.length > 0) {
+        validation.fuel.isValid = false;
+        validation.fuel.message = `${invalidFuels.length} carburant(s) avec des prix invalides`;
+        validation.fuel.details = invalidFuels.map(fuel =>
+          `Carburant ${fuel.carburant_libelle || fuel.carburant_id}: prix d'achat (${formatCurrency(fuel.prix_achat)}) doit être inférieur au prix de vente (${formatCurrency(fuel.prix_vente)})`
+        );
+      } else {
+        validation.fuel.isValid = true;
+        validation.fuel.message = `${stationFuels.length} carburant(s) configuré(s)`;
+        validation.fuel.details = stationFuels.map(fuel =>
+          `${fuel.carburant_libelle || fuel.carburant_code}: ${formatCurrency(fuel.prix_achat)} → ${formatCurrency(fuel.prix_vente)}`
+        );
+      }
+    }
+
+    // Validation de l'étape Cuves
+    if (tanks.length === 0) {
+      validation.tanks.isValid = false;
+      validation.tanks.message = 'Aucune cuve configurée';
+      validation.tanks.details = ['Veuillez ajouter au moins une cuve avec son barémage'];
+    } else {
+      const invalidTanks = tanks.filter(tank => !isCalibrationValid(tank).isValid);
+
+      if (invalidTanks.length > 0) {
+        validation.tanks.isValid = false;
+        validation.tanks.message = `${invalidTanks.length} cuve(s) avec barémage invalide`;
+        validation.tanks.details = invalidTanks.map(tank => ({
+          id: tank.id,
+          name: tank.nom,
+          error: isCalibrationValid(tank).message
+        }));
+      } else {
+        validation.tanks.isValid = true;
+        validation.tanks.message = `${tanks.length} cuve(s) configurée(s)`;
+        validation.tanks.details = tanks.map(tank => ({
+          id: tank.id,
+          name: tank.nom,
+          fuel: tank.carburant?.libelle || 'Non spécifié',
+          capacity: formatNumber(tank.capacite_maximale) + ' L',
+          calibrationPoints: parseCalibrationData(tank.barremage).length
+        }));
+      }
+    }
+
+    // Validation de l'étape Pompes
+    if (tanks.length === 0) {
+      validation.pumps.isValid = false;
+      validation.pumps.message = 'Aucune cuve pour associer les pompes';
+      validation.pumps.details = ['Veuillez d\'abord configurer les cuves'];
+    } else {
+      const groupedPumps = groupPumpsByTank();
+      const tanksWithoutPumps = tanks.filter(tank => {
+        const tankPumps = groupedPumps[tank.nom];
+        return !tankPumps || tankPumps.length === 0;
+      });
+
+      if (tanksWithoutPumps.length > 0) {
+        validation.pumps.isValid = false;
+        validation.pumps.message = `${tanksWithoutPumps.length} cuve(s) sans pompe associée`;
+        validation.pumps.details = tanksWithoutPumps.map(tank => ({
+          id: tank.id,
+          name: tank.nom,
+          fuel: tank.carburant?.libelle || 'Non spécifié'
+        }));
+      } else {
+        validation.pumps.isValid = true;
+        validation.pumps.message = `${pumps.length} pompe(s) configurée(s)`;
+        validation.pumps.details = Object.entries(groupedPumps).map(([tankName, pumpList]) => ({
+          tank: tankName,
+          pumps: pumpList.map(pump => pump.numero).join(', ')
+        }));
+      }
+    }
+
+    // Validation de l'étape Stocks initiaux
+    if (tanks.length === 0) {
+      validation.stock.isValid = false;
+      validation.stock.message = 'Aucune cuve pour définir les stocks';
+      validation.stock.details = ['Veuillez d\'abord configurer les cuves'];
+    } else {
+      const tanksWithStock = new Set(initialStocks.map(stock => stock.cuve_id));
+      const tanksWithoutStock = tanks.filter(tank => !tanksWithStock.has(tank.id));
+
+      if (tanksWithoutStock.length > 0) {
+        validation.stock.isValid = false;
+        validation.stock.message = `${tanksWithoutStock.length} cuve(s) sans stock initial`;
+        validation.stock.details = tanksWithoutStock.map(tank => ({
+          id: tank.id,
+          name: tank.nom,
+          fuel: tank.carburant?.libelle || 'Non spécifié'
+        }));
+      } else {
+        validation.stock.isValid = true;
+        validation.stock.message = `${initialStocks.length} stock(s) initial(aux) configuré(s)`;
+        validation.stock.details = initialStocks.map(stock => {
+          const tank = tanks.find(t => t.id === stock.cuve_id);
+          return {
+            tank: tank?.nom || `Cuve ${stock.cuve_id.substring(0, 8)}`,
+            level: stock.niveau_initial,
+            unit: 'L'
+          };
+        });
+      }
+    }
+
+    // Validation globale
+    validation.overall.isValid = validation.fuel.isValid &&
+                                validation.tanks.isValid &&
+                                validation.pumps.isValid &&
+                                validation.stock.isValid;
+
+    if (validation.overall.isValid) {
+      validation.overall.message = 'Toutes les étapes sont complètes';
+    } else {
+      const incompleteSteps = [
+        !validation.fuel.isValid && 'carburants',
+        !validation.tanks.isValid && 'cuves',
+        !validation.pumps.isValid && 'pompes',
+        !validation.stock.isValid && 'stocks initiaux'
+      ].filter(Boolean).join(', ');
+
+      validation.overall.message = `Étapes incomplètes: ${incompleteSteps}`;
+    }
+
+    return validation;
+  }
+
   // Fonction pour supprimer une cuve
   async function removeTank(tankId: string) {
     try {
@@ -401,6 +636,101 @@
       console.error('Erreur lors de la suppression de la cuve:', err);
       // Pour la suppression, on peut utiliser l'erreur globale car elle affecte la liste générale
       error = 'Impossible de supprimer la cuve: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour ajouter une pompe
+  async function addPump() {
+    try {
+      if (!pumpNumber || !pumpTankId || pumpInitialIndex < 0) {
+        throw new Error(get(i18nStore).resources?.configuration?.invalid_pump_data || 'Veuillez remplir correctement tous les champs de la pompe');
+      }
+
+      // Pour la première configuration, l'index final est égal à l'index initial
+      const pumpData = {
+        numero: pumpNumber,
+        statut: 'actif', // Statut par défaut
+        index_initial: pumpInitialIndex,
+        index_final: pumpInitialIndex, // Pour la création initiale
+        date_derniere_utilisation: new Date().toISOString()
+      };
+
+      const newPump = await pumpService.createPump(pumpTankId, pumpData);
+
+      // Enrichir la nouvelle pompe avec les informations de la cuve
+      const tank = tanks.find(t => t.id === pumpTankId);
+      const pumpWithTank = {
+        ...newPump,
+        cuve: tank
+      };
+
+      // Ajouter la nouvelle pompe à la liste
+      pumps = [...pumps, pumpWithTank];
+
+      // Réinitialiser le formulaire
+      showAddPumpDialog = false;
+      pumpNumber = '';
+      pumpTankId = '';
+      pumpInitialIndex = 0;
+
+      console.log('Pompe ajoutée avec succès:', newPump);
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout de la pompe:', err);
+      error = 'Impossible d\'ajouter la pompe: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour supprimer une pompe
+  async function deletePump(pumpId: string) {
+    try {
+      await pumpService.deletePump(pumpId);
+
+      // Retirer la pompe de la liste
+      pumps = pumps.filter(pump => pump.id !== pumpId);
+
+      console.log('Pompe supprimée avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la suppression de la pompe:', err);
+      error = 'Impossible de supprimer la pompe: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour mettre à jour une pompe
+  async function updatePump() {
+    try {
+      if (!editingPump || !editPumpNumber || !editPumpTankId || editPumpInitialIndex < 0) {
+        throw new Error(get(i18nStore).resources?.configuration?.invalid_pump_data || 'Veuillez remplir correctement tous les champs de la pompe');
+      }
+
+      // Pour la mise à jour, l'index final est égal à l'index initial dans le contexte de la configuration initiale
+      const pumpData = {
+        numero: editPumpNumber,
+        statut: editingPump.statut, // Garder le statut existant
+        index_initial: editPumpInitialIndex,
+        index_final: editPumpInitialIndex, // Pour la configuration initiale
+        date_derniere_utilisation: new Date().toISOString()
+      };
+
+      const updatedPump = await pumpService.updatePump(editingPump.id, pumpData);
+
+      // Enrichir la pompe mise à jour avec les informations de la cuve
+      const tank = tanks.find(t => t.id === editPumpTankId);
+      const pumpWithTank = {
+        ...updatedPump,
+        cuve: tank
+      };
+
+      // Mettre à jour la pompe dans la liste
+      pumps = pumps.map(pump => pump.id === editingPump!.id ? pumpWithTank : pump);
+
+      // Réinitialiser l'état d'édition
+      showEditPumpDialog = false;
+      editingPump = null;
+
+      console.log('Pompe mise à jour avec succès:', updatedPump);
+    } catch (err) {
+      console.error('Erreur lors de la mise à jour de la pompe:', err);
+      error = 'Impossible de mettre à jour la pompe: ' + (err as Error).message;
     }
   }
 
@@ -773,14 +1103,22 @@
 
       const newInitialStock = await tankInitialStockService.createTankInitialStock(selectedTankForStock, requestData);
 
+      // Ajouter le nouvel état initial à la liste avec les informations de la cuve
+      // Trouver la cuve correspondante dans la liste des cuves pour enrichir les données
+      const tank = tanks.find(t => t.id === newInitialStock.cuve_id);
+      const stockWithTank = {
+        ...newInitialStock,
+        cuve: tank // Ajouter les informations de la cuve
+      };
+
       // Ajouter le nouvel état initial à la liste
-      initialStocks = [...initialStocks, newInitialStock];
+      initialStocks = [...initialStocks, stockWithTank];
 
       // Réinitialiser le formulaire
       selectedTankForStock = '';
       initialTankLevel = '';
 
-      console.log('Stock initial ajouté avec succès:', newInitialStock);
+      console.log('Stock initial ajouté avec succès:', stockWithTank);
     } catch (err) {
       console.error('Erreur lors de l\'ajout du stock initial:', err);
       error = 'Impossible d\'ajouter le stock initial: ' + (err as Error).message;
@@ -1303,6 +1641,7 @@
                               <Input
                                 id="tankName"
                                 bind:value={tankName}
+                                autocomplete="one-time-code"
                                 placeholder={get(i18nStore).resources?.configuration?.tank_name || 'Nom de la cuve'}
                               />
                             </div>
@@ -1314,6 +1653,7 @@
                               <Input
                                 id="tankCode"
                                 bind:value={tankCode}
+                                autocomplete="one-time-code"
                                 placeholder={get(i18nStore).resources?.configuration?.tank_code || 'Code de la cuve'}
                               />
                             </div>
@@ -1407,7 +1747,8 @@
                                 <textarea
                                   id="tankCalibrationBulk"
                                   bind:value={tankCalibrationInput}
-                                  placeholder="H1 V1&#10;H2 V2&#10;..."
+                                  placeholder={"H1 V1\nH2 V2\n..."}
+                                  autocomplete="one-time-code"
                                   class="flex min-h-16 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                 ></textarea>
                                 <Button type="button" onclick={addCalibrationBulk} variant="outline" class="w-full text-sm h-8">
@@ -1629,7 +1970,8 @@
                                 <textarea
                                   id="editTankCalibrationBulk"
                                   bind:value={editTankCalibrationInput}
-                                  placeholder="H1 V1&#10;H2 V2&#10;..."
+                                  placeholder={"H1 V1\nH2 V2\n..."}
+                                  autocomplete="one-time-code"
                                   class="flex min-h-16 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                                 ></textarea>
                                 <Button type="button" onclick={addEditCalibrationBulk} variant="outline" class="w-full text-sm h-8">
@@ -1722,65 +2064,256 @@
               <Translate key="pumps" module="configuration" fallback="Pompes" />
             </CardTitle>
             <CardDescription>
-              <Translate 
-                key="manage_pumps" 
-                module="configuration" 
-                fallback="Configurez les pompes liées aux cuves" 
+              <Translate
+                key="manage_pumps"
+                module="configuration"
+                fallback="Configurez les pompes liées aux cuves"
               />
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <Translate key="number" module="configuration" fallback="Numéro" />
-                  </TableHead>
-                  <TableHead>
-                    <Translate key="name" module="common" fallback="Nom" />
-                  </TableHead>
-                  <TableHead>
-                    <Translate key="linked_tank" module="configuration" fallback="Cuve liée" />
-                  </TableHead>
-                  <TableHead>
-                    <Translate key="initial_index" module="configuration" fallback="Index initial" />
-                  </TableHead>
-                  <TableHead class="text-right">
-                    <Translate key="actions" module="common" fallback="Actions" />
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {#each pumps as pump (pump.id)}
-                  <TableRow>
-                    <TableCell class="font-medium">{pump.number}</TableCell>
-                    <TableCell>{pump.name}</TableCell>
-                    <TableCell>
-                      {tanks.find(t => t.id === pump.tank_id)?.nom || pump.tank_id}
-                    </TableCell>
-                    <TableCell>{pump.initial_index}</TableCell>
-                    <TableCell class="text-right">
-                      <div class="flex justify-end space-x-2">
-                        <Button variant="outline" size="sm">
-                          <Translate key="edit" module="common" fallback="Éditer" />
-                        </Button>
-                        <Button variant="outline" size="sm" class="text-destructive border-destructive">
-                          <Translate key="delete" module="common" fallback="Supprimer" />
-                        </Button>
+            {#if tanks.length === 0}
+              <div class="bg-destructive/10 border border-destructive text-destructive p-4 rounded-md">
+                <Translate key="pump_requires_tanks" module="configuration" fallback="Veuillez créer des cuves avant d'ajouter des pompes" />
+              </div>
+            {:else}
+              {@const pumpsByTank = groupPumpsByTank()}
+              {#each tanks as tank}
+                <div class="mb-6">
+                  <h3 class="text-lg font-semibold mb-3 ml-2">
+                    {tank.nom}
+                    <span class="text-sm text-muted-foreground ml-2">
+                      ({pumpsByTank[tank.nom]?.length || 0} pompe{(pumpsByTank[tank.nom]?.length || 0) > 1 ? 's' : ''})
+                    </span>
+                  </h3>
+                  {#if pumpsByTank[tank.nom] && pumpsByTank[tank.nom].length > 0}
+                    {#each pumpsByTank[tank.nom] as pump (pump.id)}
+                      <Card class="p-4 mb-2">
+                        <div class="grid grid-cols-4 gap-4 items-center">
+                          <div>
+                            <Label>
+                              <Translate key="number" module="configuration" fallback="Numéro" />
+                            </Label>
+                            <p class="font-medium">{pump.numero}</p>
+                          </div>
+                          <div>
+                            <Label>
+                              <Translate key="linked_tank" module="configuration" fallback="Cuve liée" />
+                            </Label>
+                            <p>{tanks.find(t => t.id === pump.cuve_id)?.nom || `Cuve ${pump.cuve_id?.substring(0, 8) || 'inconnue'}`}</p>
+                          </div>
+                          <div>
+                            <Label>
+                              <Translate key="initial_index" module="configuration" fallback="Index initial" />
+                            </Label>
+                            <p>{pump.index_initial}</p>
+                          </div>
+                          <div class="flex justify-end space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onclick={() => {
+                                editingPump = pump;
+                                editPumpNumber = pump.numero;
+                                editPumpTankId = pump.cuve_id;
+                                editPumpInitialIndex = pump.index_initial;
+                                showEditPumpDialog = true;
+                              }}
+                            >
+                              <Translate key="edit" module="common" fallback="Éditer" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="text-destructive border-destructive"
+                              onclick={() => deletePump(pump.id)}
+                            >
+                              <Translate key="delete" module="common" fallback="Supprimer" />
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    {/each}
+                  {:else}
+                    <Card class="p-4 mb-2 border-dashed border-muted-foreground/30">
+                      <div class="flex items-center justify-center h-16 text-muted-foreground">
+                        <Translate key="no_pumps" module="configuration" fallback="Aucune pompe configurée" />
                       </div>
-                    </TableCell>
-                  </TableRow>
-                {/each}
-              </TableBody>
-            </Table>
-            
-            <Button class="mt-4 w-full">
-              <Translate key="add_pump" module="configuration" fallback="Ajouter une pompe" />
-            </Button>
+                    </Card>
+                  {/if}
+                </div>
+              {/each}
+
+              <Dialog bind:open={showAddPumpDialog}>
+                <DialogTrigger>
+                  <Button class="w-full">
+                    <Translate key="add_pump" module="configuration" fallback="Ajouter une pompe" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent class="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>
+                      <Translate key="add_pump" module="configuration" fallback="Ajouter une pompe" />
+                    </DialogTitle>
+                    <DialogDescription>
+                      <Translate key="add_pump_description" module="configuration" fallback="Associez une pompe à une cuve" />
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div class="space-y-4 py-4">
+                    <div class="space-y-2">
+                      <Label for="pump-number">
+                        <Translate key="pump_number" module="configuration" fallback="Numéro de pompe" />
+                      </Label>
+                      <Input
+                        id="pump-number"
+                        bind:value={pumpNumber}
+                        autocomplete="one-time-code"
+                        placeholder={get(i18nStore).resources?.configuration?.pump_number_placeholder || 'Numéro de pompe'}
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="pump-tank">
+                        <Translate key="linked_tank" module="configuration" fallback="Cuve liée" />
+                      </Label>
+                      <Select.Root
+                        type="single"
+                        bind:value={pumpTankId}
+                      >
+                        <Select.Trigger id="pump-tank" class="w-full">
+                          <span data-slot="select-value">
+                            {pumpTankId
+                              ? tanks.find(t => t.id === pumpTankId)?.nom + ' (' + tanks.find(t => t.id === pumpTankId)?.code + ')'
+                              : get(i18nStore).resources?.configuration?.select_tank || 'Sélectionner une cuve'}
+                          </span>
+                        </Select.Trigger>
+                        <Select.Content>
+                          {#each tanks as tank}
+                            <Select.Item value={tank.id}>
+                              {tank.nom} ({tank.code})
+                            </Select.Item>
+                          {/each}
+                        </Select.Content>
+                      </Select.Root>
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="pump-initial-index">
+                        <Translate key="initial_index" module="configuration" fallback="Index initial" />
+                      </Label>
+                      <Input
+                        id="pump-initial-index"
+                        type="number"
+                        bind:value={pumpInitialIndex}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+                  <div class="flex justify-end space-x-2">
+                    <Button
+                      variant="outline"
+                      onclick={() => {
+                        showAddPumpDialog = false;
+                        pumpNumber = '';
+                        pumpTankId = '';
+                        pumpInitialIndex = 0;
+                      }}
+                    >
+                      <Translate key="cancel" module="common" fallback="Annuler" />
+                    </Button>
+                    <Button
+                      disabled={!pumpNumber || !pumpTankId || pumpInitialIndex < 0}
+                      onclick={addPump}
+                    >
+                      <Translate key="add" module="common" fallback="Ajouter" />
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            {/if}
           </CardContent>
         </Card>
       </TabsContent>
-      
+
+      <!-- Dialog pour l'édition de pompe -->
+      {#if editingPump}
+        <Dialog bind:open={showEditPumpDialog}>
+          <DialogContent class="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                <Translate key="edit_pump" module="configuration" fallback="Éditer la pompe" />
+              </DialogTitle>
+              <DialogDescription>
+                {editingPump.numero} - {editingPump.cuve?.nom || editingPump.cuve_id}
+              </DialogDescription>
+            </DialogHeader>
+            <div class="space-y-4 py-4">
+              <div class="space-y-2">
+                <Label for="edit-pump-number">
+                  <Translate key="pump_number" module="configuration" fallback="Numéro de pompe" />
+                </Label>
+                <Input
+                  id="edit-pump-number"
+                  bind:value={editPumpNumber}
+                  autocomplete="one-time-code"
+                  placeholder={get(i18nStore).resources?.configuration?.pump_number_placeholder || 'Numéro de pompe'}
+                />
+              </div>
+              <div class="space-y-2">
+                <Label for="edit-pump-tank">
+                  <Translate key="linked_tank" module="configuration" fallback="Cuve liée" />
+                </Label>
+                <Select.Root
+                  type="single"
+                  bind:value={editPumpTankId}
+                  disabled={true}
+                >
+                  <Select.Trigger id="edit-pump-tank" class="w-full" disabled={true}>
+                    <span data-slot="select-value">
+                      {editPumpTankId
+                        ? tanks.find(t => t.id === editPumpTankId)?.nom + ' (' + tanks.find(t => t.id === editPumpTankId)?.code + ')'
+                        : get(i18nStore).resources?.configuration?.select_tank || 'Sélectionner une cuve'}
+                    </span>
+                  </Select.Trigger>
+                  <Select.Content>
+                    {#each tanks as tank}
+                      <Select.Item value={tank.id} disabled={true}>
+                        {tank.nom} ({tank.code})
+                      </Select.Item>
+                    {/each}
+                  </Select.Content>
+                </Select.Root>
+              </div>
+              <div class="space-y-2">
+                <Label for="edit-pump-initial-index">
+                  <Translate key="initial_index" module="configuration" fallback="Index initial" />
+                </Label>
+                <Input
+                  id="edit-pump-initial-index"
+                  type="number"
+                  bind:value={editPumpInitialIndex}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <div class="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onclick={() => {
+                  showEditPumpDialog = false;
+                  editingPump = null;
+                }}
+              >
+                <Translate key="cancel" module="common" fallback="Annuler" />
+              </Button>
+              <Button
+                disabled={!editPumpNumber || !editPumpTankId || editPumpInitialIndex < 0}
+                onclick={updatePump}
+              >
+                <Translate key="save" module="common" fallback="Sauvegarder" />
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      {/if}
       <!-- Onglet Stocks Initiaux -->
       <TabsContent value="stocks" class="space-y-4">
         <Card>
@@ -1830,7 +2363,7 @@
                       {stock.cuve?.carburant?.libelle || 'Carburant non défini'}
                     </TableCell>
                     <TableCell>{stock.hauteur_jauge_initiale} cm</TableCell>
-                    <TableCell>{stock.volume_initial_calcule} L</TableCell>
+                    <TableCell>{formatNumber(stock.volume_initial_calcule)} L</TableCell>
                     <TableCell>{formatCurrency(calculateValuation(stock))}</TableCell>
                     <TableCell class="text-right">
                       <div class="flex justify-end space-x-2">
@@ -1980,9 +2513,154 @@
       </TabsContent>
     </Tabs>
     
+    <!-- Dialogue de validation de la configuration -->
+    {#if showValidationDialog && validationResults}
+      <Dialog bind:open={showValidationDialog}>
+        <DialogContent class="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              <Translate key="configuration_validation" module="configuration" fallback="Validation de la configuration" />
+            </DialogTitle>
+            <DialogDescription>
+              {validationResults.overall.isValid
+                ? (get(i18nStore).resources?.configuration?.configuration_valid || 'Configuration complète et valide')
+                : (get(i18nStore).resources?.configuration?.configuration_incomplete || 'Configuration incomplète')}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div class="space-y-4 py-4">
+            <!-- Étape Carburants -->
+            <div class="border rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">
+                  <Translate key="fuels" module="configuration" fallback="Carburants" />
+                </h3>
+                <Badge variant={validationResults.fuel.isValid ? "default" : "destructive"}>
+                  {validationResults.fuel.isValid ? 'OK' : 'KO'}
+                </Badge>
+              </div>
+              <p class="text-sm text-muted-foreground mt-1">{validationResults.fuel.message}</p>
+              {#if validationResults.fuel.details.length > 0}
+                <div class="mt-2 text-sm">
+                  {#each validationResults.fuel.details as detail}
+                    <div class="py-1">{detail}</div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <!-- Étape Cuves -->
+            <div class="border rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">
+                  <Translate key="tanks" module="configuration" fallback="Cuves" />
+                </h3>
+                <Badge variant={validationResults.tanks.isValid ? "default" : "destructive"}>
+                  {validationResults.tanks.isValid ? 'OK' : 'KO'}
+                </Badge>
+              </div>
+              <p class="text-sm text-muted-foreground mt-1">{validationResults.tanks.message}</p>
+              {#if validationResults.tanks.details.length > 0}
+                <div class="mt-2 text-sm">
+                  {#each validationResults.tanks.details as detail}
+                    <div class="py-1">
+                      {#if validationResults.tanks.isValid}
+                        <span>{detail.name} ({detail.fuel}): {detail.capacity} ({detail.calibrationPoints} points)</span>
+                      {:else}
+                        <span>{detail.name}: {detail.error}</span>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <!-- Étape Pompes -->
+            <div class="border rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">
+                  <Translate key="pumps" module="configuration" fallback="Pompes" />
+                </h3>
+                <Badge variant={validationResults.pumps.isValid ? "default" : "destructive"}>
+                  {validationResults.pumps.isValid ? 'OK' : 'KO'}
+                </Badge>
+              </div>
+              <p class="text-sm text-muted-foreground mt-1">{validationResults.pumps.message}</p>
+              {#if validationResults.pumps.details.length > 0}
+                <div class="mt-2 text-sm">
+                  {#each validationResults.pumps.details as detail}
+                    <div class="py-1">
+                      {#if validationResults.pumps.isValid}
+                        <span>{detail.tank}: {detail.pumps}</span>
+                      {:else}
+                        <span>{detail.name} ({detail.fuel})</span>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <!-- Étape Stocks initiaux -->
+            <div class="border rounded-lg p-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-semibold">
+                  <Translate key="initial_stocks" module="configuration" fallback="Stocks initiaux" />
+                </h3>
+                <Badge variant={validationResults.stock.isValid ? "default" : "destructive"}>
+                  {validationResults.stock.isValid ? 'OK' : 'KO'}
+                </Badge>
+              </div>
+              <p class="text-sm text-muted-foreground mt-1">{validationResults.stock.message}</p>
+              {#if validationResults.stock.details.length > 0}
+                <div class="mt-2 text-sm">
+                  {#each validationResults.stock.details as detail}
+                    <div class="py-1">
+                      {#if validationResults.stock.isValid}
+                        <span>{detail.tank}: {detail.level} {detail.unit}</span>
+                      {:else}
+                        <span>{detail.name} ({detail.fuel})</span>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <!-- Message global -->
+            <div class="mt-4 p-3 rounded-lg {validationResults.overall.isValid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+              <p class="font-semibold">
+                <Translate key="overall_status" module="configuration" fallback="Statut global" />:
+                {validationResults.overall.message}
+              </p>
+            </div>
+          </div>
+
+          <div class="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onclick={() => showValidationDialog = false}
+            >
+              <Translate key="close" module="common" fallback="Fermer" />
+            </Button>
+            {#if validationResults.overall.isValid}
+              <Button
+                onclick={confirmAndSaveConfiguration}
+              >
+                <Translate key="confirm_and_save" module="configuration" fallback="Confirmer et sauvegarder" />
+              </Button>
+            {/if}
+          </div>
+        </DialogContent>
+      </Dialog>
+    {/if}
+
     <!-- Bouton de sauvegarde -->
     <div class="flex justify-end">
-      <Button onclick={saveConfiguration}>
+      <Button onclick={() => {
+        validationResults = validateConfiguration();
+        showValidationDialog = true;
+      }}>
         <Translate key="save_configuration" module="configuration" fallback="Sauvegarder la configuration" />
       </Button>
     </div>

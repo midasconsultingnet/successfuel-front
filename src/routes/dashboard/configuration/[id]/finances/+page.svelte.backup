@@ -1,0 +1,1782 @@
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { configurationService, type FinanceConfig, type TreasuryConfig, type PaymentMethodConfig, type TreasuryInitialBalanceConfig, type PaymentMethodAPI } from '$lib/services/ConfigurationService';
+  import { treasuryService } from '$lib/services/TreasuryService';
+  import { paymentMethodService } from '$lib/services/PaymentMethodService';
+  import { treasuryInitialStateService } from '$lib/services/TreasuryInitialStateService';
+  import { i18nStore } from '$lib/i18n';
+  import Translate from '$lib/i18n/Translate.svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
+  import { Input } from '$lib/components/ui/input';
+  import { Label } from '$lib/components/ui/label';
+  import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs';
+  import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '$lib/components/ui/table';
+  import { Badge } from '$lib/components/ui/badge';
+  import { Spinner } from '$lib/components/ui/spinner';
+  import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '$lib/components/ui/dialog';
+  import * as Select from '$lib/components/ui/select';
+  import { get } from 'svelte/store';
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
+
+  // Constante pour contrôler l'affichage de l'onglet des soldes initiaux
+  const SHOW_INITIAL_BALANCES_TAB = false;
+
+  // Récupérer les données de la page
+  let stationId = $state<string>('');
+  let stationInfo = $state({ name: 'Station Inconnue', code: 'N/A', address: 'Adresse inconnue' });
+
+  // États
+  let loading = $state(false);
+  let error = $state<string | null>(null);
+
+  // Charger les données depuis les données de layout
+  $effect(() => {
+    const unsubscribe = page.subscribe((data) => {
+      if (data.data?.stationId && stationId !== data.data?.stationId) {
+        stationId = data.data.stationId;
+        // Charger les données dès que stationId est disponible
+        loadData();
+      }
+      if (data.data?.station) {
+        stationInfo = data.data.station;
+      }
+    });
+    return unsubscribe;
+  });
+
+  // Données de configuration financière
+  let activeTab = $state('treasuries');
+  let allTreasuries = $state<TreasuryConfig[]>([]); // Toutes les trésoreries de la base de données
+  let treasuries = $state<TreasuryConfig[]>([]); // Trésoreries liées à la station
+  let paymentMethods = $state<PaymentMethodConfig[]>([]);
+  let treasuryBalances = $state<TreasuryInitialBalanceConfig[]>([]);
+
+  // États pour les formulaires
+  let showAddTreasuryDialog = $state(false);
+  let showEditTreasuryDialog = $state(false);
+  let showAddPaymentMethodDialog = $state(false);
+  let showEditPaymentMethodDialog = $state(false);
+  let showAddBalanceDialog = $state(false);
+  let showEditBalanceDialog = $state(false);
+
+  // États du formulaire trésorerie
+  let treasuryName = $state('');
+  let treasuryType = $state<'caisse' | 'banque' | 'mobile_money' | 'note_credit' | 'fonds_divers' | 'autres'>('caisse');
+  let treasuryInitialBalance = $state(0);
+  let treasuryBankDetails = $state<Record<string, any> | null>(null);
+  let treasuryTypeValue = $state<string>('caisse');
+  let selectedUnlinkedTreasuryId = $state<string>('');
+
+  // États du formulaire méthode de paiement
+  let paymentMethodName = $state('');
+  let paymentMethodType = $state('');
+  let paymentMethodTreasuryId = $state('');
+  let paymentMethodTreasuryIdValue = $state<string>('');
+  let paymentMethodActive = $state(true);
+  let paymentMethodStatus = $state<string>('active');
+
+  // États du formulaire solde initial
+  let balanceTreasuryId = $state('');
+  let balanceInitialAmount = $state(0);
+  let balanceTreasuryIdValue = $state<string>('');
+
+  // États pour l'édition
+  let editingTreasury = $state<TreasuryConfig | null>(null);
+  let editingTreasuryTypeValue = $state<string>('cash');
+  let editingPaymentMethod = $state<PaymentMethodConfig | null>(null);
+  let editingPaymentMethodTreasuryIdValue = $state<string>('');
+  let editingPaymentMethodStatus = $state<string>('active');
+  let editingBalance = $state<TreasuryInitialBalanceConfig | null>(null);
+  let editingBalanceTreasuryIdValue = $state<string>('');
+
+  // Charger les données
+  async function loadData() {
+    try {
+      console.log('Tentative de chargement des données financières pour la station:', stationId);
+      loading = true;
+
+      if (stationId) {
+        // Charger toutes les trésoreries de la base de données
+        const allTreasuryData = await treasuryService.getAllTreasuries();
+
+        // Mapper les données pour le format interne
+        const allTreasuryConfigs = allTreasuryData.map(t => {
+          let bankDetails = undefined;
+          if (t.informations_bancaires) {
+            try {
+              bankDetails = JSON.parse(t.informations_bancaires);
+            } catch (e) {
+              console.error('Erreur de parsing JSON pour les détails bancaires:', e);
+              // Si le parsing échoue, on garde la valeur telle quelle
+              bankDetails = t.informations_bancaires;
+            }
+          }
+          return {
+            id: t.id,
+            name: t.nom,
+            type: t.type,
+            initial_balance: t.solde_initial,
+            currency: t.devise || undefined,
+            bank_details: bankDetails
+          };
+        });
+
+        // Charger les trésoreries de la station (y compris les soldes initiaux)
+        const treasuryData = await treasuryService.getTreasuriesByStation(stationId);
+
+        // Mapper les données pour le format interne
+        treasuries = treasuryData.map(t => {
+          let bankDetails = undefined;
+          if (t.informations_bancaires) {
+            try {
+              bankDetails = JSON.parse(t.informations_bancaires);
+            } catch (e) {
+              console.error('Erreur de parsing JSON pour les détails bancaires:', e);
+              // Si le parsing échoue, on garde la valeur telle quelle
+              bankDetails = t.informations_bancaires;
+            }
+          }
+          return {
+            id: t.tresorerie_id,
+            name: t.nom_tresorerie,
+            type: t.type_tresorerie,
+            initial_balance: t.solde_initial_tresorerie || t.solde_initial_station || 0,
+            currency: t.devise || undefined,
+            bank_details: bankDetails
+          };
+        });
+
+        // Mettre à jour l'état avec toutes les trésoreries
+        allTreasuries = allTreasuryConfigs;
+
+        // Charger toutes les méthodes de paiement
+        const allPaymentMethods = await paymentMethodService.getAllPaymentMethods();
+
+        // Pour chaque trésorerie, charger les méthodes de paiement associées
+        const allPaymentMethodsForTreasuries = [];
+        for (const treasury of treasuries) {
+          if (treasury.id) {
+            const treasuryPaymentMethods = await paymentMethodService.getPaymentMethodsByTreasury(treasury.id);
+            allPaymentMethodsForTreasuries.push(...treasuryPaymentMethods.map(pm => ({
+              id: pm.id,
+              name: pm.nom,
+              treasury_id: treasury.id!,
+              is_active: pm.trésorerie_id ? true : false // Utilisation de la présence de trésorerie comme indicateur actif
+            })));
+          }
+        }
+        paymentMethods = allPaymentMethodsForTreasuries;
+
+        // Charger les soldes initiaux à partir des trésoreries récupérées
+        // Chaque trésorerie contient déjà son solde initial dans les données API
+        treasuryBalances = treasuryData.map((t, index) => ({
+          id: `balance-${t.trésorerie_station_id || t.tresorerie_id || 'unknown'}-${index}`, // Utiliser l'ID d'association s'il existe, sinon utiliser 'unknown' avec index
+          treasury_id: t.tresorerie_id,
+          initial_balance: t.solde_initial_station || t.solde_initial_tresorerie || 0
+        }));
+      } else {
+        // Charger les données financières de la station - simulation avec données mockées
+        treasuries = generateMockTreasuries();
+        paymentMethods = generateMockPaymentMethods();
+        treasuryBalances = generateMockTreasuryBalances();
+      }
+
+    } catch (err) {
+      console.error('Erreur lors du chargement des données financières:', err);
+      error = 'Impossible de charger les données financières: ' + (err as Error).message;
+
+      // Données par défaut en cas d'erreur
+      treasuries = [];
+      paymentMethods = [];
+      treasuryBalances = [];
+    } finally {
+      loading = false;
+      console.log('Chargement terminé, loading:', loading);
+    }
+  }
+
+  // Sauvegarder la configuration
+  async function saveConfiguration() {
+    try {
+      if (!stationId) {
+        throw new Error('ID de station manquant');
+      }
+
+      const config: FinanceConfig = {
+        treasuries,
+        payment_methods: paymentMethods
+      };
+
+      // Pour l'instant, on simule la sauvegarde en attendant les vrais endpoints
+      console.log('Sauvegarde de la configuration financière pour la station:', stationId);
+      console.log(config);
+
+      // Ici, vous appellerez réellement le service
+      // await configurationService.saveFinanceConfig(stationId, config);
+      alert('Configuration financière sauvegardée avec succès (simulation)');
+    } catch (err) {
+      console.error('Erreur lors de la sauvegarde de la configuration:', err);
+      error = 'Erreur lors de la sauvegarde de la configuration: ' + (err as Error).message;
+    }
+  }
+
+  // Charger les données au montage
+  onMount(() => {
+    console.log('Composant finances monté avec stationId:', stationId);
+
+    // Charger les données maintenant que l'ID est disponible via les props
+    // ou charger si stationId est disponible plus tard via l'effet
+    if (stationId) {
+      loadData();
+    } else {
+      console.log('Aucun ID de station trouvé dans les props, en attente du chargement via l\'effet');
+    }
+  });
+
+  // Fonction pour ajouter une trésorerie
+  async function addTreasury() {
+    try {
+      if (!treasuryName) {
+        throw new Error('Le nom de la trésorerie est requis');
+      }
+
+      // Mettre à jour treasuryType avec la valeur sélectionnée
+      treasuryType = treasuryTypeValue as 'caisse' | 'banque' | 'mobile_money' | 'note_credit' | 'fonds_divers' | 'autres';
+
+      // Récupérer la devise depuis localStorage
+      const currency = localStorage.getItem('currency') || 'XOF';
+
+      // Convertir la chaîne JSON en objet si c'est une chaîne
+      let parsedBankDetails = null;
+      if (treasuryBankDetails && typeof treasuryBankDetails === 'string') {
+        try {
+          parsedBankDetails = JSON.parse(treasuryBankDetails);
+        } catch (e) {
+          console.error('Erreur de parsing JSON pour les détails bancaires:', e);
+          // Si le parsing échoue, on garde la valeur telle quelle
+          parsedBankDetails = treasuryBankDetails;
+        }
+      } else if (treasuryBankDetails && typeof treasuryBankDetails === 'object') {
+        // Si c'est déjà un objet, on l'utilise directement
+        parsedBankDetails = treasuryBankDetails;
+      }
+
+      // Créer l'objet pour l'appel API
+      const createData = {
+        nom: treasuryName,
+        type: treasuryType,
+        solde_initial: treasuryInitialBalance, // Utiliser le solde initial saisi dans le formulaire
+        devise: currency,
+        informations_bancaires: parsedBankDetails ? JSON.stringify(parsedBankDetails) : null
+      };
+
+      // Créer la trésorerie via l'API
+      const newTreasuryFromApi = await treasuryService.createTreasury(createData);
+
+      // Associer la trésorerie à la station
+      if (stationId) {
+        await treasuryService.associateTreasuryToStation(newTreasuryFromApi.id, stationId);
+      }
+
+      // Crée la configuration de la nouvelle trésorerie
+      let newTreasuryBankDetails = undefined;
+      if (newTreasuryFromApi.informations_bancaires) {
+        try {
+          newTreasuryBankDetails = JSON.parse(newTreasuryFromApi.informations_bancaires);
+        } catch (e) {
+          console.error('Erreur de parsing JSON pour les détails bancaires:', e);
+          // Si le parsing échoue, on garde la valeur telle quelle
+          newTreasuryBankDetails = newTreasuryFromApi.informations_bancaires;
+        }
+      }
+
+      const newTreasuryConfig = {
+        id: newTreasuryFromApi.id,
+        name: newTreasuryFromApi.nom,
+        type: newTreasuryFromApi.type,
+        initial_balance: newTreasuryFromApi.solde_initial,
+        currency: newTreasuryFromApi.devise || undefined,
+        bank_details: newTreasuryBankDetails
+      };
+
+      // Mettre à jour les listes
+      allTreasuries = [...allTreasuries, newTreasuryConfig];
+      treasuries = [...treasuries, newTreasuryConfig];
+
+      // Réinitialiser le formulaire
+      showAddTreasuryDialog = false;
+      treasuryName = '';
+      treasuryType = 'caisse';
+      treasuryTypeValue = 'caisse';
+      treasuryInitialBalance = 0;
+      treasuryBankDetails = '';
+
+      console.log('Trésorerie ajoutée avec succès:', newTreasuryFromApi);
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout de la trésorerie:', err);
+      error = 'Impossible d\'ajouter la trésorerie: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour modifier une trésorerie
+  async function updateTreasury() {
+    try {
+      if (!editingTreasury || !editingTreasury.id) {
+        throw new Error('Aucune trésorerie à éditer');
+      }
+
+      // Récupérer la devise depuis localStorage
+      const currency = localStorage.getItem('currency') || 'XOF';
+
+      // Convertir la chaîne JSON en objet si c'est une chaîne
+      let parsedBankDetails = null;
+      if (treasuryBankDetails && typeof treasuryBankDetails === 'string') {
+        try {
+          parsedBankDetails = JSON.parse(treasuryBankDetails);
+        } catch (e) {
+          console.error('Erreur de parsing JSON pour les détails bancaires:', e);
+          // Si le parsing échoue, on garde la valeur telle quelle
+          parsedBankDetails = treasuryBankDetails;
+        }
+      } else if (treasuryBankDetails && typeof treasuryBankDetails === 'object') {
+        // Si c'est déjà un objet, on l'utilise directement
+        parsedBankDetails = treasuryBankDetails;
+      }
+
+      // Mettre à jour la trésorerie via l'API
+      const updateData = {
+        nom: editingTreasury.name,
+        type: editingTreasuryTypeValue as 'caisse' | 'banque' | 'mobile_money' | 'note_credit' | 'fonds_divers' | 'autres',
+        solde_initial: editingTreasury.initial_balance, // Laisser la valeur existante pour ne pas la perdre
+        devise: currency,
+        informations_bancaires: parsedBankDetails ? JSON.stringify(parsedBankDetails) : null
+      };
+
+      const updatedTreasuryFromApi = await treasuryService.updateTreasury(editingTreasury.id, updateData);
+
+      // Mettre à jour dans les listes
+      let updatedTreasuryBankDetails = undefined;
+      if (updatedTreasuryFromApi.informations_bancaires) {
+        try {
+          updatedTreasuryBankDetails = JSON.parse(updatedTreasuryFromApi.informations_bancaires);
+        } catch (e) {
+          console.error('Erreur de parsing JSON pour les détails bancaires:', e);
+          // Si le parsing échoue, on garde la valeur telle quelle
+          updatedTreasuryBankDetails = updatedTreasuryFromApi.informations_bancaires;
+        }
+      }
+
+      const updatedTreasuryConfig = {
+        id: updatedTreasuryFromApi.id,
+        name: updatedTreasuryFromApi.nom,
+        type: updatedTreasuryFromApi.type,
+        initial_balance: updatedTreasuryFromApi.solde_initial,
+        currency: updatedTreasuryFromApi.devise || undefined,
+        bank_details: updatedTreasuryBankDetails
+      };
+
+      allTreasuries = allTreasuries.map(t =>
+        t.id === editingTreasury!.id ? updatedTreasuryConfig : t
+      );
+
+      treasuries = treasuries.map(t =>
+        t.id === editingTreasury!.id ? updatedTreasuryConfig : t
+      );
+
+      // Fermer la boîte de dialogue
+      showEditTreasuryDialog = false;
+      editingTreasury = null;
+
+      console.log('Trésorerie mise à jour avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la mise à jour de la trésorerie:', err);
+      error = 'Impossible de mettre à jour la trésorerie: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour supprimer une trésorerie
+  async function removeTreasury(treasuryId: string) {
+    try {
+      // Vérifier si la trésorerie est utilisée par une méthode de paiement
+      const usedByPaymentMethod = paymentMethods.some(pm => pm.treasury_id === treasuryId);
+      if (usedByPaymentMethod) {
+        throw new Error('Impossible de supprimer cette trésorerie car elle est utilisée par une méthode de paiement');
+      }
+
+      // Supprimer la trésorerie via l'API
+      await treasuryService.deleteTreasury(treasuryId);
+
+      // Retirer des listes
+      allTreasuries = allTreasuries.filter(t => t.id !== treasuryId);
+      treasuries = treasuries.filter(t => t.id !== treasuryId);
+
+      console.log('Trésorerie supprimée avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la suppression de la trésorerie:', err);
+      error = 'Impossible de supprimer la trésorerie: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour préparer l'édition d'une trésorerie
+  function prepareEditTreasury(treasury: TreasuryConfig) {
+    editingTreasury = { ...treasury };
+    editingTreasuryTypeValue = treasury.type;
+    treasuryTypeValue = treasury.type;
+    // Convertir les détails bancaires en chaîne JSON pour l'affichage dans la textarea
+    if (treasury.bank_details) {
+      treasuryBankDetails = JSON.stringify(treasury.bank_details, null, 2); // Formatage avec indentation
+    } else {
+      treasuryBankDetails = null;
+    }
+    showEditTreasuryDialog = true;
+  }
+
+  // Fonction pour ajouter une méthode de paiement
+  async function addPaymentMethod() {
+    try {
+      if (!paymentMethodName || !paymentMethodTreasuryIdValue) {
+        throw new Error('Le nom et la trésorerie de la méthode de paiement sont requis');
+      }
+
+      // Mettre à jour les propriétés avec les valeurs des selects
+      paymentMethodTreasuryId = paymentMethodTreasuryIdValue;
+      paymentMethodActive = paymentMethodStatus === 'active';
+
+      // Créer l'objet pour l'appel API
+      const createData = {
+        nom: paymentMethodName,
+        type_paiement: paymentMethodType,
+        trésorerie_id: paymentMethodTreasuryIdValue
+      };
+
+      // Créer la méthode de paiement via l'API
+      const newPaymentMethodFromApi = await paymentMethodService.createPaymentMethod(createData);
+
+      // Associer la méthode de paiement à la trésorerie via l'API d'association
+      // Désactivé temporairement car pas fonctionnel
+      // if (newPaymentMethodFromApi.id && paymentMethodTreasuryIdValue) {
+      //   await paymentMethodService.associatePaymentMethodToTreasury({
+      //     trésorerie_id: paymentMethodTreasuryIdValue,
+      //     methode_paiement_id: newPaymentMethodFromApi.id
+      //   });
+      // }
+
+      // Créer l'objet de la nouvelle méthode de paiement pour l'interface
+      const newPaymentMethod: PaymentMethodConfig = {
+        id: newPaymentMethodFromApi.id,
+        name: newPaymentMethodFromApi.nom,
+        treasury_id: paymentMethodTreasuryIdValue,
+        is_active: true
+      };
+
+      // Ajouter à la liste
+      paymentMethods = [...paymentMethods, newPaymentMethod];
+
+      // Réinitialiser le formulaire
+      showAddPaymentMethodDialog = false;
+      paymentMethodName = '';
+      paymentMethodTreasuryId = '';
+      paymentMethodTreasuryIdValue = '';
+      paymentMethodActive = true;
+      paymentMethodStatus = 'active';
+
+      console.log('Méthode de paiement ajoutée avec succès:', newPaymentMethod);
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout de la méthode de paiement:', err);
+      error = 'Impossible d\'ajouter la méthode de paiement: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour modifier une méthode de paiement
+  async function updatePaymentMethod() {
+    try {
+      if (!editingPaymentMethod || !editingPaymentMethod.id) {
+        throw new Error('Aucune méthode de paiement à éditer');
+      }
+
+      // Mettre à jour la méthode de paiement via l'API
+      const updateData = {
+        nom: editingPaymentMethod.name || '',
+        type_paiement: paymentMethodType || 'autre', // Utiliser le type du formulaire ou 'autre' par défaut
+        trésorerie_id: editingPaymentMethodTreasuryIdValue
+      };
+
+      const updatedPaymentMethodFromApi = await paymentMethodService.updatePaymentMethod(editingPaymentMethod.id, updateData);
+
+      // Mettre à jour la méthode de paiement dans la liste
+      const updatedId = editingPaymentMethod.id;
+      const updatedTreasuryId = editingPaymentMethodTreasuryIdValue;
+      const updatedIsActive = editingPaymentMethodStatus === 'active';
+      const updatedPaymentMethod = {
+        id: updatedPaymentMethodFromApi.id,
+        name: updatedPaymentMethodFromApi.nom,
+        treasury_id: updatedTreasuryId,
+        is_active: updatedIsActive
+      };
+
+      paymentMethods = paymentMethods.map(pm =>
+        pm.id === updatedId
+          ? updatedPaymentMethod
+          : pm
+      );
+
+      // Fermer la boîte de dialogue
+      showEditPaymentMethodDialog = false;
+      editingPaymentMethod = null;
+
+      console.log('Méthode de paiement mise à jour avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la mise à jour de la méthode de paiement:', err);
+      error = 'Impossible de mettre à jour la méthode de paiement: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour supprimer une méthode de paiement
+  async function removePaymentMethod(paymentMethodId: string) {
+    try {
+      // Supprimer la méthode de paiement via l'API
+      await paymentMethodService.deletePaymentMethod(paymentMethodId);
+
+      // Retirer la méthode de paiement de la liste
+      paymentMethods = paymentMethods.filter(pm => pm.id !== paymentMethodId);
+
+      console.log('Méthode de paiement supprimée avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la suppression de la méthode de paiement:', err);
+      error = 'Impossible de supprimer la méthode de paiement: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour préparer l'édition d'une méthode de paiement
+  function prepareEditPaymentMethod(paymentMethod: PaymentMethodConfig) {
+    editingPaymentMethod = { ...paymentMethod };
+    editingPaymentMethodTreasuryIdValue = paymentMethod.treasury_id;
+    editingPaymentMethodStatus = paymentMethod.is_active ? 'active' : 'inactive';
+    // Initialiser paymentMethodType avec une valeur par défaut ou vide
+    // Pour l'instant, on suppose que le type n'est pas disponible dans l'objet initial
+    // On pourrait enrichir l'objet PaymentMethodConfig pour inclure le type
+    paymentMethodType = '';
+    showEditPaymentMethodDialog = true;
+  }
+
+  // Fonction pour associer une trésorerie existante à la station
+  async function addExistingTreasury() {
+    try {
+      if (!selectedUnlinkedTreasuryId || !stationId) {
+        throw new Error('Aucune trésorerie sélectionnée ou ID de station manquant');
+      }
+
+      // Associer la trésorerie existante à la station via l'API
+      await treasuryService.associateTreasuryToStation(selectedUnlinkedTreasuryId, stationId);
+
+      // Récupérer la trésorerie associée pour la mettre à jour dans la liste
+      const associatedTreasury = allTreasuries.find(t => t.id === selectedUnlinkedTreasuryId);
+
+      if (associatedTreasury) {
+        // Ajouter la trésorerie à la liste des trésoreries de la station
+        treasuries = [...treasuries, associatedTreasury];
+      }
+
+      // Réinitialiser la sélection
+      selectedUnlinkedTreasuryId = '';
+
+      console.log('Trésorerie existante ajoutée à la station avec succès');
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout de la trésorerie existante:', err);
+      error = 'Impossible d\'ajouter la trésorerie existante: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour filtrer les trésoreries non liées à la station
+  function getUnlinkedTreasuries(): TreasuryConfig[] {
+    const linkedTreasuryIds = new Set(treasuries.map(t => t.id).filter(Boolean));
+    return allTreasuries.filter(t => !linkedTreasuryIds.has(t.id || ''));
+  }
+
+  // Fonction pour grouper les méthodes de paiement par trésorerie
+  function groupPaymentMethodsByTreasury(): Record<string, PaymentMethodConfig[]> {
+    const grouped: Record<string, PaymentMethodConfig[]> = {};
+
+    for (const treasury of treasuries) {
+      if (treasury.id) {
+        grouped[treasury.id] = [];
+      }
+    }
+
+    for (const method of paymentMethods) {
+      if (method.treasury_id && grouped[method.treasury_id]) {
+        grouped[method.treasury_id].push(method);
+      }
+    }
+
+    return grouped;
+  }
+
+  // Fonction pour ajouter un solde initial
+  async function addTreasuryBalance() {
+    try {
+      if (!balanceTreasuryIdValue || balanceInitialAmount < 0) {
+        throw new Error('La trésorerie et le montant du solde sont requis');
+      }
+
+      // Mettre à jour la propriété avec la valeur du select
+      balanceTreasuryId = balanceTreasuryIdValue;
+
+      // Récupérer les associations trésorerie-station pour la station
+      const treasuryStationAssociations = await treasuryService.getTreasuryStationAssociations(stationId);
+
+      // Trouver l'association spécifique pour cette trésorerie
+      const treasuryAssociation = treasuryStationAssociations.find(assoc => assoc.trésorerie_id === balanceTreasuryId);
+
+      if (!treasuryAssociation) {
+        throw new Error('Impossible de trouver l\'association trésorerie-station correspondante');
+      }
+
+      // Créer l'état initial via l'API
+      // Pour l'instant, on utilise un ID utilisateur factice, à remplacer par l'ID réel de l'utilisateur authentifié
+      const currentUserId = '00000000-0000-0000-0000-000000000000'; // Remplacer par le vrai ID utilisateur
+
+      const initialStateData = {
+        tresorerie_station_id: treasuryAssociation.id, // Utiliser l'ID de l'association trésorerie-station
+        date_enregistrement: new Date().toISOString(),
+        montant: balanceInitialAmount,
+        commentaire: null, // Optionnel
+        enregistre_par: currentUserId // ID de l'utilisateur connecté
+      };
+
+      const newInitialStateFromApi = await treasuryInitialStateService.createInitialState(initialStateData);
+
+      // Créer l'objet du nouveau solde
+      const newBalance: TreasuryInitialBalanceConfig = {
+        id: newInitialStateFromApi.id,
+        treasury_id: balanceTreasuryId,
+        initial_balance: balanceInitialAmount
+      };
+
+      // Mettre à jour la liste des soldes initiaux
+      treasuryBalances = [...treasuryBalances, newBalance];
+
+      // Mettre à jour aussi l'objet trésorerie dans la liste des trésoreries pour refléter le nouveau solde initial
+      treasuries = treasuries.map(t =>
+        t.id === balanceTreasuryId
+          ? { ...t, initial_balance: balanceInitialAmount }
+          : t
+      );
+
+      // Réinitialiser le formulaire
+      showAddBalanceDialog = false;
+      balanceTreasuryId = '';
+      balanceTreasuryIdValue = '';
+      balanceInitialAmount = 0;
+
+      console.log('Solde initial ajouté avec succès:', newBalance);
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout du solde initial:', err);
+      error = 'Impossible d\'ajouter le solde initial: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour modifier un solde initial
+  async function updateTreasuryBalance() {
+    try {
+      if (!editingBalance || !editingBalance.id) {
+        throw new Error('Aucun solde à éditer');
+      }
+
+      // Pour la mise à jour, nous devons d'abord récupérer l'association trésorerie-station
+      const treasuryStationAssociations = await treasuryService.getTreasuryStationAssociations(stationId);
+      const treasuryAssociation = treasuryStationAssociations.find(assoc => assoc.trésorerie_id === editingBalanceTreasuryIdValue);
+
+      if (!treasuryAssociation) {
+        throw new Error('Impossible de trouver l\'association trésorerie-station correspondante');
+      }
+
+      // Mettre à jour l'état initial via l'API
+      const updateData = {
+        date_enregistrement: new Date().toISOString(),
+        montant: editingBalance.initial_balance || 0,
+        commentaire: null, // Optionnel
+        enregistre_par: '00000000-0000-0000-0000-000000000000' // Remplacer par le vrai ID utilisateur
+      };
+
+      const updatedInitialStateFromApi = await treasuryInitialStateService.updateInitialState(editingBalance.id, updateData);
+
+      // Mettre à jour le solde dans la liste
+      const updatedId = editingBalance.id;
+      const updatedTreasuryId = editingBalanceTreasuryIdValue;
+      const updatedBalance = {
+        id: updatedInitialStateFromApi.id,
+        treasury_id: updatedTreasuryId,
+        initial_balance: editingBalance.initial_balance || 0
+      };
+
+      treasuryBalances = treasuryBalances.map(b =>
+        b.id === updatedId
+          ? updatedBalance
+          : b
+      );
+
+      // Mettre à jour aussi l'objet trésorerie dans la liste des trésoreries pour refléter le nouveau solde initial
+      treasuries = treasuries.map(t =>
+        t.id === updatedTreasuryId
+          ? { ...t, initial_balance: editingBalance.initial_balance || 0 }
+          : t
+      );
+
+      // Fermer la boîte de dialogue
+      showEditBalanceDialog = false;
+      editingBalance = null;
+
+      console.log('Solde initial mis à jour avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la mise à jour du solde initial:', err);
+      error = 'Impossible de mettre à jour le solde initial: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour supprimer un solde initial
+  async function removeTreasuryBalance(balanceId: string) {
+    try {
+      // Supprimer l'état initial via l'API
+      await treasuryInitialStateService.deleteInitialState(balanceId);
+
+      // Retirer du tableau des soldes initiaux
+      treasuryBalances = treasuryBalances.filter(b => b.id !== balanceId);
+
+      // Mettre à jour la trésorerie dans la liste des trésoreries pour refléter le solde initial mis à jour
+      treasuries = treasuries.map(t =>
+        t.id === editingBalance!.treasury_id
+          ? { ...t, initial_balance: 0 } // Remise à zéro du solde initial
+          : t
+      );
+
+      console.log('Solde initial supprimé avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la suppression du solde initial:', err);
+      error = 'Impossible de supprimer le solde initial: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour préparer l'édition d'un solde initial
+  function prepareEditBalance(balance: TreasuryInitialBalanceConfig) {
+    editingBalance = { ...balance };
+    editingBalanceTreasuryIdValue = balance.treasury_id;
+    showEditBalanceDialog = true;
+  }
+
+  // Fonction pour obtenir une trésorerie par ID
+  function getTreasuryById(id: string) {
+    return treasuries.find(t => t.id === id);
+  }
+
+  console.log('Composant finances monté');
+</script>
+
+<div class="space-y-6">
+  <!-- Carte d'identification de la station -->
+  {#if stationInfo}
+    <Card class="border-primary/30 bg-primary/5">
+      <CardHeader class="flex flex-row items-center justify-between space-x-4">
+        <div class="flex flex-row items-center space-x-4">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary">
+            💰
+          </div>
+          <div>
+            <CardTitle class="text-lg">
+              {get(i18nStore).resources?.configuration?.current_station
+                ? get(i18nStore).resources?.configuration?.current_station.replace('{stationName}', stationInfo.name || 'Station Inconnue')
+                : `Station: ${stationInfo.name || 'Station Inconnue'}`}
+            </CardTitle>
+            <p class="text-sm text-muted-foreground">
+              <Translate key="code" module="common" fallback="Code" />: {stationInfo.code || 'N/A'} | {stationInfo.address || 'Adresse inconnue'}
+            </p>
+          </div>
+        </div>
+        <Button
+          variant="outline"
+          onclick={() => goto(`/dashboard/configuration/${stationId}`)}
+          class="flex flex-row items-center space-x-2"
+        >
+          ←
+          <Translate key="back_to_general_config" module="configuration" fallback="Retour config générale" />
+        </Button>
+      </CardHeader>
+    </Card>
+  {/if}
+
+  <div>
+    <h1 class="text-3xl font-bold tracking-tight">
+      <Translate key="finance_setup" module="configuration" fallback="Configuration Financière" />
+    </h1>
+    <p class="text-muted-foreground">
+      <Translate
+        key="treasury_payment_setup"
+        module="configuration"
+        fallback="Configurez les trésoreries, méthodes de paiement et soldes initiaux"
+      />
+    </p>
+  </div>
+
+  {#if loading}
+    <div class="flex justify-center items-center h-64">
+      <Spinner class="w-8 h-8" />
+    </div>
+  {:else if error}
+    <div class="bg-destructive/10 border border-destructive text-destructive p-4 rounded-md">
+      {error}
+    </div>
+  {:else}
+    <Card>
+      <CardHeader>
+        <div class="flex justify-between items-center">
+          <div>
+            <CardTitle>
+              <Translate key="financial_config" module="configuration" fallback="Configuration Financière" />
+            </CardTitle>
+            <CardDescription>
+              <Translate
+                key="manage_finances"
+                module="configuration"
+                fallback="Gérez les trésoreries, méthodes de paiement et soldes initiaux de votre station"
+              />
+            </CardDescription>
+          </div>
+          <Button onclick={() => saveConfiguration()}>
+            <Translate key="save_configuration" module="configuration" fallback="Sauvegarder" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Tabs bind:value={activeTab} class="w-full">
+          <TabsList class="grid w-full grid-cols-3">
+            <TabsTrigger value="treasuries">
+              <Translate key="treasuries" module="configuration" fallback="Trésoreries" />
+            </TabsTrigger>
+            <TabsTrigger value="payment_methods">
+              <Translate key="payment_methods" module="configuration" fallback="Méthodes de Paiement" />
+            </TabsTrigger>
+            {#if SHOW_INITIAL_BALANCES_TAB}
+            <TabsTrigger value="initial_balances">
+              <Translate key="initial_balances" module="configuration" fallback="Soldes Initiaux" />
+            </TabsTrigger>
+            {/if}
+          </TabsList>
+
+          <!-- Onglet Trésoreries -->
+          <TabsContent value="treasuries" class="space-y-4">
+            <Card>
+              <CardHeader>
+                <div class="flex justify-between items-center">
+                  <div>
+                    <CardTitle>
+                      <Translate key="treasuries" module="configuration" fallback="Trésoreries" />
+                    </CardTitle>
+                    <CardDescription>
+                      <Translate
+                        key="manage_treasuries"
+                        module="configuration"
+                        fallback="Gérez les différentes trésoreries de votre station"
+                      />
+                    </CardDescription>
+                  </div>
+                  <Dialog bind:open={showAddTreasuryDialog}>
+                    <DialogTrigger>
+                      <Button>
+                        <Translate key="add_treasury" module="configuration" fallback="Ajouter une Trésorerie" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent class="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>
+                          <Translate key="add_treasury" module="configuration" fallback="Ajouter une Trésorerie" />
+                        </DialogTitle>
+                        <DialogDescription>
+                          <Translate
+                            key="add_treasury_description"
+                            module="configuration"
+                            fallback="Entrez les informations de la nouvelle trésorerie"
+                          />
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div class="space-y-4 py-4">
+                        <!-- Option pour créer une nouvelle trésorerie -->
+                        <div class="space-y-4">
+                          <h3 class="text-lg font-medium">
+                            <Translate key="create_new_treasury" module="configuration" fallback="Créer une nouvelle trésorerie" />
+                          </h3>
+
+                          <div class="space-y-2">
+                            <Label for="treasuryName">
+                              <Translate key="name" module="common" fallback="Nom" />
+                            </Label>
+                            <Input
+                              id="treasuryName"
+                              bind:value={treasuryName}
+                              autocomplete="one-time-code"
+                              placeholder={get(i18nStore).resources?.configuration?.treasury_name || 'Nom de la trésorerie'}
+                            />
+                          </div>
+
+                          <div class="space-y-2">
+                            <Label for="treasuryType">
+                              <Translate key="type" module="common" fallback="Type" />
+                            </Label>
+                            <Select.Root type="single" bind:value={treasuryTypeValue}>
+                              <Select.Trigger id="treasuryType">
+                                <span data-slot="select-value">
+                                  {treasuryTypeValue
+                                    ? (get(i18nStore).resources?.configuration?.[`treasury_type_${treasuryTypeValue}`] ||
+                                       (treasuryTypeValue === 'caisse' ? (get(i18nStore).resources?.configuration?.caisse || 'Caisse') :
+                                        treasuryTypeValue === 'banque' ? (get(i18nStore).resources?.configuration?.banque || 'Banque') :
+                                        treasuryTypeValue === 'mobile_money' ? (get(i18nStore).resources?.configuration?.mobile_money || 'Mobile Money') :
+                                        treasuryTypeValue === 'note_credit' ? (get(i18nStore).resources?.configuration?.note_credit || 'Note de crédit') :
+                                        treasuryTypeValue === 'fonds_divers' ? (get(i18nStore).resources?.configuration?.fonds_divers || 'Fonds divers') :
+                                        (get(i18nStore).resources?.configuration?.autres || 'Autres')))
+                                    : get(i18nStore).resources?.configuration?.select_treasury_type || 'Sélectionnez un type'}
+                                </span>
+                              </Select.Trigger>
+                              <Select.Content>
+                                <Select.Item value="caisse">
+                                  <Translate key="caisse" module="configuration" fallback="Caisse" />
+                                </Select.Item>
+                                <Select.Item value="banque">
+                                  <Translate key="banque" module="configuration" fallback="Banque" />
+                                </Select.Item>
+                                <Select.Item value="mobile_money">
+                                  <Translate key="mobile_money" module="configuration" fallback="Mobile Money" />
+                                </Select.Item>
+                                <Select.Item value="note_credit">
+                                  <Translate key="note_credit" module="configuration" fallback="Note de crédit" />
+                                </Select.Item>
+                                <Select.Item value="fonds_divers">
+                                  <Translate key="fonds_divers" module="configuration" fallback="Fonds divers" />
+                                </Select.Item>
+                                <Select.Item value="autres">
+                                  <Translate key="autres" module="configuration" fallback="Autres" />
+                                </Select.Item>
+                              </Select.Content>
+                            </Select.Root>
+                          </div>
+
+                          <div class="space-y-2">
+                            <Label for="treasuryInitialBalance">
+                              <Translate key="initial_balance" module="configuration" fallback="Solde initial" />
+                            </Label>
+                            <Input
+                              id="treasuryInitialBalance"
+                              type="number"
+                              bind:value={treasuryInitialBalance}
+                              placeholder={get(i18nStore).resources?.configuration?.initial_balance_placeholder || 'Solde initial de la trésorerie'}
+                            />
+                          </div>
+
+                          <div class="space-y-2">
+                            <Label for="treasuryBankDetails">
+                              <Translate key="bank_details" module="configuration" fallback="Détails bancaires" />
+                            </Label>
+                            <textarea
+                              id="treasuryBankDetails"
+                              class="w-full p-2 border rounded-md"
+                              bind:value={treasuryBankDetails}
+                              placeholder={get(i18nStore).resources?.configuration?.bank_details_placeholder || 'IBAN, nom de la banque, etc.'}
+                            />
+                          </div>
+
+                          <Button
+                            onclick={addTreasury}
+                            disabled={!treasuryName}
+                            class="w-full"
+                          >
+                            <Translate key="add_new_treasury" module="configuration" fallback="Ajouter une nouvelle" />
+                          </Button>
+                        </div>
+
+                        <!-- Ligne de séparation -->
+                        <div class="relative pt-4">
+                          <div class="absolute inset-0 flex items-center">
+                            <div class="w-full border-t border-gray-300"></div>
+                          </div>
+                          <div class="relative flex justify-center text-xs uppercase">
+                            <span class="bg-background px-2 text-muted-foreground">
+                              <Translate key="or" module="common" fallback="ou" />
+                            </span>
+                          </div>
+                        </div>
+
+                        <!-- Option pour ajouter une trésorerie existante -->
+                        <div class="space-y-4">
+                          <h3 class="text-lg font-medium">
+                            <Translate key="add_existing_treasury" module="configuration" fallback="Ajouter une trésorerie existante" />
+                          </h3>
+
+                          <div class="space-y-2">
+                            <Select.Root type="single" bind:value={selectedUnlinkedTreasuryId}>
+                              <Select.Trigger>
+                                <span data-slot="select-value">
+                                  {selectedUnlinkedTreasuryId
+                                    ? getUnlinkedTreasuries().find(t => t.id === selectedUnlinkedTreasuryId)?.name
+                                    : get(i18nStore).resources?.configuration?.select_unlinked_treasury || 'Sélectionner une trésorerie non liée'}
+                                </span>
+                              </Select.Trigger>
+                              <Select.Content>
+                                {#each getUnlinkedTreasuries() as treasury}
+                                  <Select.Item value={treasury.id}>
+                                    {treasury.name} ({treasury.type})
+                                  </Select.Item>
+                                {/each}
+                              </Select.Content>
+                            </Select.Root>
+                            <Button
+                              onclick={addExistingTreasury}
+                              disabled={!selectedUnlinkedTreasuryId}
+                              class="w-full"
+                            >
+                              <Translate key="add_existing_treasury_to_station" module="configuration" fallback="Ajouter à la station" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="flex justify-end space-x-2">
+                        <Button
+                          variant="outline"
+                          onclick={() => {
+                            showAddTreasuryDialog = false;
+                            treasuryName = '';
+                            treasuryType = 'caisse';
+                            treasuryTypeValue = 'caisse';
+                            treasuryBankDetails = '';
+                            selectedUnlinkedTreasuryId = '';
+                          }}
+                        >
+                          <Translate key="cancel" module="common" fallback="Annuler" />
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div class="space-y-4">
+                  {#each treasuries as treasury (treasury.id)}
+                    <Card class="p-4">
+                      <div class="grid grid-cols-4 gap-4 items-center">
+                        <div>
+                          <Label>
+                            <Translate key="name" module="common" fallback="Nom" />
+                          </Label>
+                          <p class="font-medium">{treasury.name}</p>
+                        </div>
+                        <div>
+                          <Label>
+                            <Translate key="type" module="common" fallback="Type" />
+                          </Label>
+                          <p>{get(i18nStore).resources?.configuration?.[`treasury_type_${treasury.type}`] || treasury.type}</p>
+                        </div>
+                        <div>
+                          <Label>
+                            <Translate key="bank_details" module="configuration" fallback="Détails bancaires" />
+                          </Label>
+                          <p class="font-medium">{treasury.bank_details ?
+                            typeof treasury.bank_details === 'object' ?
+                              JSON.stringify(treasury.bank_details) :
+                              treasury.bank_details
+                            : (get(i18nStore).resources?.configuration?.no_bank_details || 'Aucun détail')}</p>
+                        </div>
+                        <div class="flex justify-end space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onclick={() => prepareEditTreasury(treasury)}
+                          >
+                            <Translate key="edit" module="common" fallback="Éditer" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            class="text-destructive border-destructive"
+                            onclick={() => removeTreasury(treasury.id!)}
+                          >
+                            <Translate key="delete" module="common" fallback="Supprimer" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  {/each}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <!-- Onglet Méthodes de Paiement -->
+          <TabsContent value="payment_methods" class="space-y-4">
+            <Card>
+              <CardHeader>
+                <div class="flex justify-between items-center">
+                  <div>
+                    <CardTitle>
+                      <Translate key="payment_methods" module="configuration" fallback="Méthodes de Paiement" />
+                    </CardTitle>
+                    <CardDescription>
+                      <Translate
+                        key="manage_payment_methods"
+                        module="configuration"
+                        fallback="Gérez les différentes méthodes de paiement de votre station"
+                      />
+                    </CardDescription>
+                  </div>
+                  <Dialog bind:open={showAddPaymentMethodDialog}>
+                    <DialogTrigger>
+                      <Button>
+                        <Translate key="add_payment_method" module="configuration" fallback="Ajouter une Méthode" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent class="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>
+                          <Translate key="add_payment_method" module="configuration" fallback="Ajouter une Méthode" />
+                        </DialogTitle>
+                        <DialogDescription>
+                          <Translate
+                            key="add_payment_method_description"
+                            module="configuration"
+                            fallback="Entrez les informations de la nouvelle méthode de paiement"
+                          />
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div class="space-y-4 py-4">
+                        <div class="space-y-2">
+                          <Label for="paymentMethodName">
+                            <Translate key="name" module="common" fallback="Nom" />
+                          </Label>
+                          <Input
+                            id="paymentMethodName"
+                            bind:value={paymentMethodName}
+                            autocomplete="one-time-code"
+                            placeholder={get(i18nStore).resources?.configuration?.payment_method_name || 'Nom de la méthode de paiement'}
+                          />
+                        </div>
+
+                        <div class="space-y-2">
+                          <Label for="paymentMethodType">
+                            <Translate key="payment_method_type" module="configuration" fallback="Type de méthode de paiement" />
+                          </Label>
+                          <Input
+                            id="paymentMethodType"
+                            bind:value={paymentMethodType}
+                            autocomplete="one-time-code"
+                            placeholder={get(i18nStore).resources?.configuration?.payment_method_type_placeholder || 'Type de paiement (ex: Carte Carburant, Carte Bancaire)'}
+                          />
+                        </div>
+
+                        <div class="space-y-2">
+                          <Label for="paymentMethodTreasuryId">
+                            <Translate key="treasury" module="configuration" fallback="Trésorerie" />
+                          </Label>
+                          <Select.Root type="single" bind:value={paymentMethodTreasuryIdValue}>
+                            <Select.Trigger id="paymentMethodTreasuryId">
+                              <span data-slot="select-value">
+                                {treasuries.length > 0
+                                  ? (paymentMethodTreasuryIdValue && paymentMethodTreasuryIdValue !== ''
+                                    ? treasuries.find(t => t.id && t.id === paymentMethodTreasuryIdValue)?.name || 'Trésorerie inconnue'
+                                    : get(i18nStore).resources?.configuration?.select_treasury || 'Sélectionnez une trésorerie')
+                                  : get(i18nStore).resources?.configuration?.loading_treasuries || 'Chargement...'}
+                              </span>
+                            </Select.Trigger>
+                            <Select.Content>
+                              {#if treasuries.length > 0}
+                                {#each treasuries as treasury (treasury.id)}
+                                  {#if treasury.id && treasury.id !== ''}
+                                    <Select.Item value={treasury.id}>
+                                      {treasury.name} ({get(i18nStore).resources?.configuration?.[`treasury_type_${treasury.type}`] || treasury.type})
+                                    </Select.Item>
+                                  {/if}
+                                {/each}
+                              {:else}
+                                <Select.Item value="" disabled={true}>
+                                  {get(i18nStore).resources?.configuration?.no_treasuries_available || 'Aucune trésorerie disponible'}
+                                </Select.Item>
+                              {/if}
+                            </Select.Content>
+                          </Select.Root>
+                        </div>
+
+                        <div class="space-y-2">
+                          <Label for="paymentMethodActive">
+                            <Translate key="status" module="common" fallback="Statut" />
+                          </Label>
+                          <Select.Root type="single" bind:value={paymentMethodStatus}>
+                            <Select.Trigger>
+                              <span data-slot="select-value">
+                                {paymentMethodStatus === 'active'
+                                  ? get(i18nStore).resources?.configuration?.active || 'Actif'
+                                  : get(i18nStore).resources?.configuration?.inactive || 'Inactif'}
+                              </span>
+                            </Select.Trigger>
+                            <Select.Content>
+                              <Select.Item value="active">
+                                <Translate key="active" module="configuration" fallback="Actif" />
+                              </Select.Item>
+                              <Select.Item value="inactive">
+                                <Translate key="inactive" module="configuration" fallback="Inactif" />
+                              </Select.Item>
+                            </Select.Content>
+                          </Select.Root>
+                        </div>
+                      </div>
+
+                      <div class="flex justify-end space-x-2">
+                        <Button
+                          variant="outline"
+                          onclick={() => {
+                            showAddPaymentMethodDialog = false;
+                            paymentMethodName = '';
+                            paymentMethodType = '';
+                            paymentMethodTreasuryId = '';
+                            paymentMethodActive = true;
+                            paymentMethodStatus = 'active';
+                          }}
+                        >
+                          <Translate key="cancel" module="common" fallback="Annuler" />
+                        </Button>
+                        <Button
+                          onclick={addPaymentMethod}
+                          disabled={!paymentMethodName || !paymentMethodTreasuryIdValue}
+                        >
+                          <Translate key="add" module="common" fallback="Ajouter" />
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div class="space-y-6">
+                  {#each treasuries as treasury (treasury.id)}
+                    {#if treasury.id}
+                      <div>
+                        <h3 class="text-lg font-semibold mb-3">{treasury.name} ({get(i18nStore).resources?.configuration?.[`treasury_type_${treasury.type}`] || treasury.type})</h3>
+                        <div class="space-y-3">
+                          {#each groupPaymentMethodsByTreasury()[treasury.id] as method (method.id)}
+                            <Card class="p-4">
+                              <div class="grid grid-cols-4 gap-4 items-center">
+                                <div>
+                                  <Label>
+                                    <Translate key="name" module="common" fallback="Nom" />
+                                  </Label>
+                                  <p class="font-medium">{method.name}</p>
+                                </div>
+                                <div>
+                                  <Label>
+                                    <Translate key="treasury" module="configuration" fallback="Trésorerie" />
+                                  </Label>
+                                  <p>{getTreasuryById(method.treasury_id)?.name || 'Trésorerie inconnue'}</p>
+                                </div>
+                                <div>
+                                  <Label>
+                                    <Translate key="status" module="common" fallback="Statut" />
+                                  </Label>
+                                  <Badge variant={method.is_active ? "default" : "secondary"}>
+                                    {method.is_active
+                                      ? get(i18nStore).resources?.configuration?.active || 'Actif'
+                                      : get(i18nStore).resources?.configuration?.inactive || 'Inactif'}
+                                  </Badge>
+                                </div>
+                                <div class="flex justify-end space-x-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onclick={() => prepareEditPaymentMethod(method)}
+                                  >
+                                    <Translate key="edit" module="common" fallback="Éditer" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    class="text-destructive border-destructive"
+                                    onclick={() => removePaymentMethod(method.id!)}
+                                  >
+                                    <Translate key="delete" module="common" fallback="Supprimer" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </Card>
+                          {/each}
+                          {#if groupPaymentMethodsByTreasury()[treasury.id].length === 0}
+                            <p class="text-sm text-muted-foreground italic">
+                              <Translate key="no_payment_methods" module="configuration" fallback="Aucune méthode de paiement configurée pour cette trésorerie" />
+                            </p>
+                          {/if}
+                        </div>
+                      </div>
+                    {/if}
+                  {/each}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {#if SHOW_INITIAL_BALANCES_TAB}
+          <!-- Onglet Soldes Initiaux -->
+          <TabsContent value="initial_balances" class="space-y-4">
+            <Card>
+              <CardHeader>
+                <div class="flex justify-between items-center">
+                  <div>
+                    <CardTitle>
+                      <Translate key="initial_balances" module="configuration" fallback="Soldes Initiaux" />
+                    </CardTitle>
+                    <CardDescription>
+                      <Translate
+                        key="manage_initial_balances"
+                        module="configuration"
+                        fallback="Gérez les soldes initiaux des trésoreries"
+                      />
+                    </CardDescription>
+                  </div>
+                  <Dialog bind:open={showAddBalanceDialog}>
+                    <DialogTrigger>
+                      <Button>
+                        <Translate key="add_initial_balance" module="configuration" fallback="Ajouter un Solde" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent class="sm:max-w-md">
+                      <DialogHeader>
+                        <DialogTitle>
+                          <Translate key="add_initial_balance" module="configuration" fallback="Ajouter un Solde" />
+                        </DialogTitle>
+                        <DialogDescription>
+                          <Translate
+                            key="add_balance_description"
+                            module="configuration"
+                            fallback="Entrez le solde initial pour une trésorerie"
+                          />
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div class="space-y-4 py-4">
+                        <div class="space-y-2">
+                          <Label for="balanceTreasuryId">
+                            <Translate key="treasury" module="configuration" fallback="Trésorerie" />
+                          </Label>
+                          <Select.Root type="single" bind:value={balanceTreasuryIdValue}>
+                            <Select.Trigger id="balanceTreasuryId">
+                              <span data-slot="select-value">
+                                {treasuries.length > 0
+                                  ? (balanceTreasuryIdValue
+                                    ? getTreasuryById(balanceTreasuryIdValue)?.name || 'Trésorerie inconnue'
+                                    : get(i18nStore).resources?.configuration?.select_treasury || 'Sélectionnez une trésorerie')
+                                  : get(i18nStore).resources?.configuration?.loading_treasuries || 'Chargement...'}
+                              </span>
+                            </Select.Trigger>
+                            <Select.Content>
+                              {#if treasuries.length > 0}
+                                {#each treasuries as treasury}
+                                  <Select.Item value={treasury.id!}>
+                                    {treasury.name} ({get(i18nStore).resources?.configuration?.[`treasury_type_${treasury.type}`] || treasury.type})
+                                  </Select.Item>
+                                {/each}
+                              {:else}
+                                <Select.Item value="" disabled={true}>
+                                  {get(i18nStore).resources?.configuration?.no_treasuries_available || 'Aucune trésorerie disponible'}
+                                </Select.Item>
+                              {/if}
+                            </Select.Content>
+                          </Select.Root>
+                        </div>
+
+                        <div class="space-y-2">
+                          <Label for="balanceInitialAmount">
+                            <Translate key="initial_balance" module="configuration" fallback="Solde Initial" />
+                          </Label>
+                          <Input
+                            id="balanceInitialAmount"
+                            type="number"
+                            bind:value={balanceInitialAmount}
+                            placeholder={get(i18nStore).resources?.configuration?.initial_balance_placeholder || 'Montant initial'}
+                          />
+                        </div>
+                      </div>
+
+                      <div class="flex justify-end space-x-2">
+                        <Button
+                          variant="outline"
+                          onclick={() => {
+                            showAddBalanceDialog = false;
+                            balanceTreasuryId = '';
+                            balanceInitialAmount = 0;
+                          }}
+                        >
+                          <Translate key="cancel" module="common" fallback="Annuler" />
+                        </Button>
+                        <Button
+                          onclick={addTreasuryBalance}
+                          disabled={!balanceTreasuryId || balanceInitialAmount < 0}
+                        >
+                          <Translate key="add" module="common" fallback="Ajouter" />
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div class="space-y-4">
+                  {#each treasuryBalances as balance (balance.id)}
+                    <Card class="p-4">
+                      <div class="grid grid-cols-4 gap-4 items-center">
+                        <div>
+                          <Label>
+                            <Translate key="treasury" module="configuration" fallback="Trésorerie" />
+                          </Label>
+                          <p class="font-medium">{getTreasuryById(balance.treasury_id)?.name || 'Trésorerie inconnue'}</p>
+                        </div>
+                        <div>
+                          <Label>
+                            <Translate key="initial_balance" module="configuration" fallback="Solde Initial" />
+                          </Label>
+                          <p class="font-medium">{balance.initial_balance?.toLocaleString() || 0} XOF</p>
+                        </div>
+                        <div>
+                          <Label>
+                            <Translate key="type" module="common" fallback="Type" />
+                          </Label>
+                          <p>{getTreasuryById(balance.treasury_id)?.type
+                            ? get(i18nStore).resources?.configuration?.[`treasury_type_${getTreasuryById(balance.treasury_id)!.type}`] || getTreasuryById(balance.treasury_id)?.type
+                            : 'Type inconnu'}</p>
+                        </div>
+                        <div class="flex justify-end space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onclick={() => prepareEditBalance(balance)}
+                          >
+                            <Translate key="edit" module="common" fallback="Éditer" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            class="text-destructive border-destructive"
+                            onclick={() => removeTreasuryBalance(balance.id!)}
+                          >
+                            <Translate key="delete" module="common" fallback="Supprimer" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  {/each}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
+
+    <!-- Dialogue d'édition de trésorerie -->
+    {#if editingTreasury}
+      <Dialog bind:open={showEditTreasuryDialog}>
+        <DialogContent class="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              <Translate key="edit_treasury" module="configuration" fallback="Éditer la Trésorerie" />
+            </DialogTitle>
+            <DialogDescription>
+              <Translate
+                key="edit_treasury_description"
+                module="configuration"
+                fallback="Modifiez les informations de la trésorerie"
+              />
+            </DialogDescription>
+          </DialogHeader>
+          <div class="space-y-4 py-4">
+            <div class="space-y-2">
+              <Label for="editTreasuryName">
+                <Translate key="name" module="common" fallback="Nom" />
+              </Label>
+              <Input
+                id="editTreasuryName"
+                bind:value={editingTreasury.name}
+                autocomplete="one-time-code"
+                placeholder={get(i18nStore).resources?.configuration?.treasury_name || 'Nom de la trésorerie'}
+              />
+            </div>
+
+            <div class="space-y-2">
+              <Label for="editTreasuryType">
+                <Translate key="type" module="common" fallback="Type" />
+              </Label>
+              <Select.Root type="single" bind:value={editingTreasuryTypeValue}>
+                <Select.Trigger id="editTreasuryType">
+                  <span data-slot="select-value">
+                    {editingTreasuryTypeValue
+                      ? (get(i18nStore).resources?.configuration?.[`treasury_type_${editingTreasuryTypeValue}`] ||
+                         editingTreasuryTypeValue === 'caisse' ? (get(i18nStore).resources?.configuration?.caisse || 'Caisse') :
+                         editingTreasuryTypeValue === 'banque' ? (get(i18nStore).resources?.configuration?.banque || 'Banque') :
+                         editingTreasuryTypeValue === 'mobile_money' ? (get(i18nStore).resources?.configuration?.mobile_money || 'Mobile Money') :
+                         editingTreasuryTypeValue === 'note_credit' ? (get(i18nStore).resources?.configuration?.note_credit || 'Note de crédit') :
+                         editingTreasuryTypeValue === 'fonds_divers' ? (get(i18nStore).resources?.configuration?.fonds_divers || 'Fonds divers') :
+                         (get(i18nStore).resources?.configuration?.autres || 'Autres'))
+                      : 'Sélectionnez un type'}
+                  </span>
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="caisse">
+                    <Translate key="caisse" module="configuration" fallback="Caisse" />
+                  </Select.Item>
+                  <Select.Item value="banque">
+                    <Translate key="banque" module="configuration" fallback="Banque" />
+                  </Select.Item>
+                  <Select.Item value="mobile_money">
+                    <Translate key="mobile_money" module="configuration" fallback="Mobile Money" />
+                  </Select.Item>
+                  <Select.Item value="note_credit">
+                    <Translate key="note_credit" module="configuration" fallback="Note de crédit" />
+                  </Select.Item>
+                  <Select.Item value="fonds_divers">
+                    <Translate key="fonds_divers" module="configuration" fallback="Fonds divers" />
+                  </Select.Item>
+                  <Select.Item value="autres">
+                    <Translate key="autres" module="configuration" fallback="Autres" />
+                  </Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+
+
+
+            <div class="space-y-2">
+              <Label for="editTreasuryBankDetails">
+                <Translate key="bank_details" module="configuration" fallback="Détails bancaires" />
+              </Label>
+              <textarea
+                id="editTreasuryBankDetails"
+                class="w-full p-2 border rounded-md"
+                bind:value={treasuryBankDetails}
+                placeholder={get(i18nStore).resources?.configuration?.bank_details_placeholder || 'IBAN, nom de la banque, etc.'}
+              />
+            </div>
+          </div>
+
+          <div class="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onclick={() => {
+                showEditTreasuryDialog = false;
+                editingTreasury = null;
+              }}
+            >
+              <Translate key="cancel" module="common" fallback="Annuler" />
+            </Button>
+            <Button
+              onclick={updateTreasury}
+              disabled={!editingTreasury.name}
+            >
+              <Translate key="save" module="common" fallback="Sauvegarder" />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    {/if}
+
+    <!-- Dialogue d'édition de méthode de paiement -->
+    {#if editingPaymentMethod}
+      <Dialog bind:open={showEditPaymentMethodDialog}>
+        <DialogContent class="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              <Translate key="edit_payment_method" module="configuration" fallback="Éditer la Méthode" />
+            </DialogTitle>
+            <DialogDescription>
+              <Translate
+                key="edit_payment_method_description"
+                module="configuration"
+                fallback="Modifiez les informations de la méthode de paiement"
+              />
+            </DialogDescription>
+          </DialogHeader>
+          <div class="space-y-4 py-4">
+            <div class="space-y-2">
+              <Label for="editPaymentMethodName">
+                <Translate key="name" module="common" fallback="Nom" />
+              </Label>
+              <Input
+                id="editPaymentMethodName"
+                bind:value={editingPaymentMethod.name}
+                autocomplete="one-time-code"
+                placeholder={get(i18nStore).resources?.configuration?.payment_method_name || 'Nom de la méthode de paiement'}
+              />
+            </div>
+
+            <div class="space-y-2">
+              <Label for="editPaymentMethodType">
+                <Translate key="payment_method_type" module="configuration" fallback="Type de méthode de paiement" />
+              </Label>
+              <Input
+                id="editPaymentMethodType"
+                bind:value={paymentMethodType}
+                autocomplete="one-time-code"
+                placeholder={get(i18nStore).resources?.configuration?.payment_method_type_placeholder || 'Type de paiement (ex: Carte Carburant, Carte Bancaire)'}
+              />
+            </div>
+
+            <div class="space-y-2">
+              <Label for="editPaymentMethodTreasuryId">
+                <Translate key="treasury" module="configuration" fallback="Trésorerie" />
+              </Label>
+              <Select.Root type="single" bind:value={editingPaymentMethodTreasuryIdValue}>
+                <Select.Trigger id="editPaymentMethodTreasuryId">
+                  <span data-slot="select-value">
+                    {treasuries.length > 0
+                      ? (editingPaymentMethodTreasuryIdValue
+                        ? getTreasuryById(editingPaymentMethodTreasuryIdValue)?.name || 'Trésorerie inconnue'
+                        : get(i18nStore).resources?.configuration?.select_treasury || 'Sélectionnez une trésorerie')
+                      : get(i18nStore).resources?.configuration?.loading_treasuries || 'Chargement...'}
+                  </span>
+                </Select.Trigger>
+                <Select.Content>
+                  {#if treasuries.length > 0}
+                    {#each treasuries as treasury}
+                      <Select.Item value={treasury.id || ''}>
+                        {treasury.name} ({get(i18nStore).resources?.configuration?.[`treasury_type_${treasury.type}`] || treasury.type})
+                      </Select.Item>
+                    {/each}
+                  {:else}
+                    <Select.Item value="" disabled={true}>
+                      {get(i18nStore).resources?.configuration?.no_treasuries_available || 'Aucune trésorerie disponible'}
+                    </Select.Item>
+                  {/if}
+                </Select.Content>
+              </Select.Root>
+            </div>
+
+            <div class="space-y-2">
+              <Label for="editPaymentMethodActive">
+                <Translate key="status" module="common" fallback="Statut" />
+              </Label>
+              <Select.Root type="single" bind:value={editingPaymentMethodStatus}>
+                <Select.Trigger>
+                  <span data-slot="select-value">
+                    {editingPaymentMethodStatus === 'active'
+                      ? get(i18nStore).resources?.configuration?.active || 'Actif'
+                      : get(i18nStore).resources?.configuration?.inactive || 'Inactif'}
+                  </span>
+                </Select.Trigger>
+                <Select.Content>
+                  <Select.Item value="active">
+                    <Translate key="active" module="configuration" fallback="Actif" />
+                  </Select.Item>
+                  <Select.Item value="inactive">
+                    <Translate key="inactive" module="configuration" fallback="Inactif" />
+                  </Select.Item>
+                </Select.Content>
+              </Select.Root>
+            </div>
+          </div>
+
+          <div class="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onclick={() => {
+                showEditPaymentMethodDialog = false;
+                editingPaymentMethod = null;
+                editingPaymentMethodStatus = 'active';
+              }}
+            >
+              <Translate key="cancel" module="common" fallback="Annuler" />
+            </Button>
+            <Button
+              onclick={updatePaymentMethod}
+              disabled={!editingPaymentMethod?.name || !editingPaymentMethod?.treasury_id}
+            >
+              <Translate key="save" module="common" fallback="Sauvegarder" />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    {/if}
+
+    <!-- Dialogue d'édition de solde initial -->
+    {#if editingBalance}
+      <Dialog bind:open={showEditBalanceDialog}>
+        <DialogContent class="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              <Translate key="edit_initial_balance" module="configuration" fallback="Éditer le Solde" />
+            </DialogTitle>
+            <DialogDescription>
+              <Translate
+                key="edit_balance_description"
+                module="configuration"
+                fallback="Modifiez le solde initial de la trésorerie"
+              />
+            </DialogDescription>
+          </DialogHeader>
+          <div class="space-y-4 py-4">
+            <div class="space-y-2">
+              <Label for="editBalanceTreasuryId">
+                <Translate key="treasury" module="configuration" fallback="Trésorerie" />
+              </Label>
+              <Select.Root type="single" bind:value={editingBalanceTreasuryIdValue}>
+                <Select.Trigger id="editBalanceTreasuryId">
+                  <span data-slot="select-value">
+                    {treasuries.length > 0
+                      ? (editingBalanceTreasuryIdValue
+                        ? getTreasuryById(editingBalanceTreasuryIdValue)?.name || 'Trésorerie inconnue'
+                        : get(i18nStore).resources?.configuration?.select_treasury || 'Sélectionnez une trésorerie')
+                      : get(i18nStore).resources?.configuration?.loading_treasuries || 'Chargement...'}
+                  </span>
+                </Select.Trigger>
+                <Select.Content>
+                  {#if treasuries.length > 0}
+                    {#each treasuries as treasury}
+                      <Select.Item value={treasury.id!}>
+                        {treasury.name} ({get(i18nStore).resources?.configuration?.[`treasury_type_${treasury.type}`] || treasury.type})
+                      </Select.Item>
+                    {/each}
+                  {:else}
+                    <Select.Item value="" disabled={true}>
+                      {get(i18nStore).resources?.configuration?.no_treasuries_available || 'Aucune trésorerie disponible'}
+                    </Select.Item>
+                  {/if}
+                </Select.Content>
+              </Select.Root>
+            </div>
+
+            <div class="space-y-2">
+              <Label for="editBalanceInitialAmount">
+                <Translate key="initial_balance" module="configuration" fallback="Solde Initial" />
+              </Label>
+              <Input
+                id="editBalanceInitialAmount"
+                type="number"
+                bind:value={editingBalance.initial_balance}
+                placeholder={get(i18nStore).resources?.configuration?.initial_balance_placeholder || 'Montant initial'}
+              />
+            </div>
+          </div>
+
+          <div class="flex justify-end space-x-2">
+            <Button
+              variant="outline"
+              onclick={() => {
+                showEditBalanceDialog = false;
+                editingBalance = null;
+              }}
+            >
+              <Translate key="cancel" module="common" fallback="Annuler" />
+            </Button>
+            <Button
+              onclick={updateTreasuryBalance}
+              disabled={!editingBalance.treasury_id || editingBalance.initial_balance < 0}
+            >
+              <Translate key="save" module="common" fallback="Sauvegarder" />
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    {/if}
+    {/if}
+  {/if}
+</div>

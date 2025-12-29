@@ -58,24 +58,22 @@ export function getLocaleConfig(): LocaleConfig {
     let language = DEFAULT_CONFIG.language;
     let currency = DEFAULT_CONFIG.currency;
 
-    // Tenter de récupérer la langue depuis le store i18n si disponible
+    // Tenter de récupérer la langue depuis localStorage (plus fiable)
     if (typeof window !== 'undefined') {
-      const i18nStoreModule = (globalThis as any).__svelte_store__;
-      if (i18nStoreModule && i18nStoreModule.i18nStore) {
-        const state = i18nStoreModule.i18nStore.getState();
-        if (state.currentLanguage) {
-          language = state.currentLanguage.substring(0, 2); // Prendre les 2 premières lettres (ex: 'fr' de 'fr-FR')
-        }
+      const storedLanguage = localStorage.getItem('language');
+      if (storedLanguage && ['fr', 'en'].includes(storedLanguage)) {
+        language = storedLanguage;
       }
     }
 
     return {
       language,
       currency,
-      locale: `${language}-${language.toUpperCase()}`
+      locale: languageToLocale(language)
     };
   } catch (error) {
     // Si l'accès au store échoue, utiliser les valeurs par défaut
+    console.error('Erreur lors de la récupération de la configuration locale:', error);
     return DEFAULT_CONFIG;
   }
 }
@@ -145,7 +143,8 @@ export function languageToLocale(language: string): string {
     'zh': 'zh-CN',
     'ja': 'ja-JP',
     'ar': 'ar-SA',
-    'ru': 'ru-RU'
+    'ru': 'ru-RU',
+    'sw': 'sw-TZ' // Pour le swahili, si nécessaire
   };
 
   return localeMap[language] || `${language}-${language.toUpperCase()}`;

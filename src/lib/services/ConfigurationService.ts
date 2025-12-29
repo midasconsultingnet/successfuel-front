@@ -95,15 +95,26 @@ export interface FinanceConfig {
 export interface TreasuryConfig {
   id?: string;
   name: string;
-  type: 'cash' | 'bank' | 'mobile_money';
+  type: 'caisse' | 'banque' | 'mobile_money' | 'note_credit' | 'fonds_divers' | 'autres';
   initial_balance: number;
+  solde_tresorerie?: number;
+  currency?: string;
+  bank_details?: Record<string, any>;
 }
 
 export interface PaymentMethodConfig {
   id?: string;
   name: string;
   treasury_id: string;
-  is_active: boolean;
+  actif: boolean;
+}
+
+export interface PaymentMethodAPI {
+  id: string;
+  nom: string;
+  description?: string | null;
+  type_paiement: string;
+  trésorerie_id?: string | null;
 }
 
 export interface BalanceConfig {
@@ -132,6 +143,39 @@ export interface TreasuryInitialBalanceConfig {
   id?: string;
   treasury_id: string;
   initial_balance: number;
+}
+
+// Interface pour la configuration complète de la station
+export interface StationConfiguration {
+  completion: {
+    infrastructure?: {
+      fuel?: boolean;
+      tanks?: boolean;
+      pumps?: boolean;
+      stock?: boolean;
+      overall?: boolean;
+    };
+    partners?: {
+      suppliers?: boolean;
+      customers?: boolean;
+      overall?: boolean;
+    };
+    employees?: {
+      employees?: boolean;
+      overall?: boolean;
+    };
+    finances?: {
+      treasuries?: boolean;
+      payment_methods?: boolean;
+      overall?: boolean;
+    };
+    balance?: {
+      assets?: boolean;
+      receivables?: boolean;
+      debts?: boolean;
+      overall?: boolean;
+    };
+  };
 }
 
 // Service pour gérer la configuration de la station
@@ -197,6 +241,13 @@ class ConfigurationService {
    */
   async getFullConfiguration(stationId: string): Promise<any> {
     return await apiService.get<any>(`/stations/${stationId}/configuration/full`);
+  }
+
+  /**
+   * Sauvegarder la configuration complète d'une station
+   */
+  async saveStationConfiguration(stationId: string, config: StationConfiguration): Promise<void> {
+    return await apiService.put<void>(`/compagnie/stations/${stationId}/config`, config);
   }
 }
 

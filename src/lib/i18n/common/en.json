@@ -1,6 +1,7 @@
 {
   "app_name": "SuccessFuel",
-  "description": "Smart Gas Station Management",
+  "app_description":"Smart Gas Station Management",
+  "description": "Description",
   "dashboard": "Dashboard",
   "settings": "Settings",
   "logout": "Logout",
@@ -39,6 +40,7 @@
   "actions": "Actions",
   "edit": "Edit",
   "delete": "Delete",
+  "dissociate": "Dissociate",
   "cancel": "Cancel",
   "save": "Save",
   "loading": "Loading...",
@@ -52,5 +54,9 @@
   "code_required": "Code is required",
   "address_required": "Address is required",
   "success": "Success",
-  "error": "Error"
+  "error": "Error",
+  "or": "or",
+  "phone": "Phone",
+  "receivable": "Receivable",
+  "debt": "Debt"
 }

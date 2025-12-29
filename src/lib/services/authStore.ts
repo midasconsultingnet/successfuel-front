@@ -32,6 +32,12 @@ const createAuthStore = () => {
       try {
         const response = await authService.login(credentials);
 
+        // Vérifier que le token est bien présent dans le localStorage
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+          throw new Error('Le token d\'accès n\'a pas été stocké après le login');
+        }
+
         // Récupérer les informations détaillées de l'utilisateur via l'API
         const user = await userService.getMe();
 
@@ -97,12 +103,29 @@ const createAuthStore = () => {
           user
         }));
       } catch (error) {
-        set({
-          isAuthenticated: false,
-          user: null,
-          isLoading: false
-        });
-        throw error;
+        // Vérifier si l'erreur est une erreur 401 (session expirée)
+        if (error instanceof Error && (error as any).status === 401) {
+          set({
+            isAuthenticated: false,
+            user: null,
+            isLoading: false
+          });
+
+          // Lancer un événement personnalisé pour signaler l'expiration de session
+          // Cela permettra au composant SessionExpiredPopover de s'activer
+          setTimeout(() => {
+            window.dispatchEvent(new CustomEvent('sessionExpired'));
+          }, 0);
+
+          throw error;
+        } else {
+          set({
+            isAuthenticated: false,
+            user: null,
+            isLoading: false
+          });
+          throw error;
+        }
       }
     },
 
