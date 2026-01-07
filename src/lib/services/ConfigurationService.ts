@@ -12,6 +12,7 @@ export interface ConfigurationState {
   employees_complete: boolean;
   finances_complete: boolean;
   balance_complete: boolean;
+  retail_complete: boolean;
   is_complete: boolean;
   created_at: string;
   updated_at: string;
@@ -145,6 +146,21 @@ export interface TreasuryInitialBalanceConfig {
   initial_balance: number;
 }
 
+export interface RetailConfig {
+  products: RetailProductConfig[];
+}
+
+export interface RetailProductConfig {
+  id?: string;
+  name: string;
+  category: 'boutique' | 'lubrifiants' | 'gaz' | 'services';
+  code?: string;
+  purchase_price: number;
+  sale_price: number;
+  stock: number;
+  description?: string;
+}
+
 // Interface pour la configuration complète de la station
 export interface StationConfiguration {
   completion: {
@@ -173,6 +189,9 @@ export interface StationConfiguration {
       assets?: boolean;
       receivables?: boolean;
       debts?: boolean;
+      overall?: boolean;
+    };
+    retail?: {
       overall?: boolean;
     };
   };
@@ -227,6 +246,13 @@ class ConfigurationService {
    */
   async saveBalanceConfig(stationId: string, config: BalanceConfig): Promise<void> {
     return await apiService.post<void>(`/stations/${stationId}/configuration/balance`, config);
+  }
+
+  /**
+   * Sauvegarder la configuration des produits et services
+   */
+  async saveRetailConfig(stationId: string, config: RetailConfig): Promise<void> {
+    return await apiService.post<void>(`/stations/${stationId}/configuration/retail`, config);
   }
 
   /**

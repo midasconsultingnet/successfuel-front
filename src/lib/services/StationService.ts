@@ -25,6 +25,8 @@ export interface Station {
   code: string;
   adresse: string | null;
   coordonnees_gps: string | null;
+  groupe_id?: string | null; // ID du groupe partenaire
+  infos_plus: Record<string, any> | null; // Informations supplémentaires comme NIF, STAT, RCS, Téléphone
   statut: 'actif' | 'inactif';
   config?: StationConfig; // Champ optionnel pour la configuration
   created_at: string;
@@ -36,6 +38,8 @@ export interface CreateStationRequest {
   code: string;
   adresse: string;
   coordonnees_gps: string;
+  groupe_id?: string | null;
+  infos_plus: Record<string, any> | null;
 }
 
 export interface UpdateStationRequest {
@@ -43,6 +47,8 @@ export interface UpdateStationRequest {
   code?: string;
   adresse?: string | null;
   coordonnees_gps?: string;
+  groupe_id?: string | null;
+  infos_plus?: Record<string, any> | null;
   statut?: 'actif' | 'inactif';
 }
 

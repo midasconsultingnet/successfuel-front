@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { stationService, type Station } from '$lib/services/StationService';
+  import { groupePartenaireService, type GroupePartenaire } from '$lib/services/GroupePartenaireService';
   import { formatLocalDate } from '$lib/utils/dates';
   import { i18nStore } from '$lib/i18n';
   import Translate from '$lib/i18n/Translate.svelte';
@@ -30,11 +31,15 @@
   import { Spinner } from '$lib/components/ui/spinner';
   import { Input } from '$lib/components/ui/input';
   import { Label } from '$lib/components/ui/label';
+  import * as Select from '$lib/components/ui/select';
   import { toast } from 'svelte-sonner';
+  import { Select as SelectPrimitive } from "bits-ui";
 
   // State
   let stations: Station[] = $state([]);
+  let groupesPartenaires: GroupePartenaire[] = $state([]);
   let loading = $state(true);
+  let groupesLoading = $state(true);
   let error = $state<string | null>(null);
 
   // Dialog states
@@ -47,7 +52,12 @@
     nom: '',
     code: '',
     adresse: '',
-    coordonnees_gps: ''
+    coordonnees_gps: '',
+    nif: '',
+    stat: '',
+    rcs: '',
+    telephone: '',
+    groupe_id: ''
   });
 
   let formErrors = $state<Record<string, string>>({});
@@ -55,17 +65,42 @@
   // Derived state pour les traductions
   let translations = $derived($i18nStore.resources);
 
-  // Charger les stations
+  // Fonction utilitaire pour parser les coordonnées GPS en toute sécurité
+  function safelyParseGPS(gpsString: string | null) {
+    if (!gpsString) return null;
+
+    // Si c'est déjà un objet, le retourner directement
+    if (typeof gpsString === 'object' && 'lat' in gpsString && 'long' in gpsString) {
+      return gpsString;
+    }
+
+    // Sinon, essayer de le parser comme JSON
+    try {
+      const parsed = JSON.parse(gpsString);
+      if (parsed && typeof parsed === 'object' && 'lat' in parsed && 'long' in parsed) {
+        return parsed;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Charger les stations et les groupes partenaires
   async function loadStations() {
     try {
       loading = true;
       error = null;
-      stations = await stationService.getStations();
+      [stations, groupesPartenaires] = await Promise.all([
+        stationService.getStations(),
+        groupePartenaireService.getGroupesPartenaires()
+      ]);
     } catch (err) {
       console.error('Erreur lors du chargement des stations:', err);
       error = (err as Error).message || 'Erreur lors du chargement des stations';
     } finally {
       loading = false;
+      groupesLoading = false;
     }
   }
 
@@ -88,12 +123,32 @@
       return;
     }
 
+    // Préparer les données GPS
+    let gpsData: { lat: number; long: number } | null = null;
+    if (formData.coordonnees_gps) {
+      try {
+        const [lat, long] = formData.coordonnees_gps.split(',').map(Number);
+        if (!isNaN(lat) && !isNaN(long)) {
+          gpsData = { lat, long };
+        }
+      } catch (e) {
+        console.warn('Coordonnées GPS invalides, elles seront ignorées');
+      }
+    }
+
     // Appel API pour créer la station
     stationService.createStation({
       nom: formData.nom,
       code: formData.code,
       adresse: formData.adresse,
-      coordonnees_gps: formData.coordonnees_gps
+      coordonnees_gps: gpsData ? JSON.stringify(gpsData) : null,
+      groupe_id: formData.groupe_id || null,
+      infos_plus: {
+        nif: formData.nif,
+        stat: formData.stat,
+        rcs: formData.rcs,
+        telephone: formData.telephone
+      }
     })
       .then((newStation) => {
         stations = [...stations, newStation];
@@ -142,12 +197,32 @@
       return;
     }
 
+    // Préparer les données GPS
+    let gpsData: { lat: number; long: number } | null = null;
+    if (formData.coordonnees_gps) {
+      try {
+        const [lat, long] = formData.coordonnees_gps.split(',').map(Number);
+        if (!isNaN(lat) && !isNaN(long)) {
+          gpsData = { lat, long };
+        }
+      } catch (e) {
+        console.warn('Coordonnées GPS invalides, elles seront ignorées');
+      }
+    }
+
     // Appel API pour mettre à jour la station
     stationService.updateStation(editingStation.id, {
       nom: formData.nom,
       code: formData.code,
       adresse: formData.adresse,
-      coordonnees_gps: formData.coordonnees_gps
+      coordonnees_gps: gpsData ? JSON.stringify(gpsData) : null,
+      groupe_id: formData.groupe_id || null,
+      infos_plus: {
+        nif: formData.nif,
+        stat: formData.stat,
+        rcs: formData.rcs,
+        telephone: formData.telephone
+      }
     })
       .then((updatedStation) => {
         stations = stations.map(s => s.id === updatedStation.id ? updatedStation : s);
@@ -181,7 +256,12 @@
       nom: '',
       code: '',
       adresse: '',
-      coordonnees_gps: ''
+      coordonnees_gps: '',
+      nif: '',
+      stat: '',
+      rcs: '',
+      telephone: '',
+      groupe_id: ''
     };
     formErrors = {};
   }
@@ -191,11 +271,33 @@
     const stationAdresse = station.adresse || '';
     const stationCoordonnees = station.coordonnees_gps || '';
 
+    // Extraire les coordonnées GPS si elles sont stockées en JSON
+    let gpsString = '';
+    if (station.coordonnees_gps) {
+      const gpsData = safelyParseGPS(station.coordonnees_gps);
+      if (gpsData) {
+        gpsString = `${gpsData.lat},${gpsData.long}`;
+      } else {
+        gpsString = station.coordonnees_gps;
+      }
+    }
+
+    // Extraire les informations supplémentaires
+    const nif = station.infos_plus?.nif || '';
+    const stat = station.infos_plus?.stat || '';
+    const rcs = station.infos_plus?.rcs || '';
+    const telephone = station.infos_plus?.telephone || '';
+
     formData = {
       nom: station.nom,
       code: station.code,
       adresse: stationAdresse,
-      coordonnees_gps: stationCoordonnees
+      coordonnees_gps: gpsString,
+      nif,
+      stat,
+      rcs,
+      telephone,
+      groupe_id: station.groupe_id || ''
     };
     isEditDialogOpen = true;
   }
@@ -315,14 +417,95 @@
             {/if}
           </div>
 
+          <div class="grid grid-cols-2 gap-4">
+            <div class="grid w-full items-center gap-1.5">
+              <Label for="nif">
+                <Translate key="nif" module="structure" fallback="NIF" />
+              </Label>
+              <Input
+                id="nif"
+                bind:value={formData.nif}
+                placeholder="NIF"
+                autocomplete="one-time-code"
+              />
+            </div>
+
+            <div class="grid w-full items-center gap-1.5">
+              <Label for="stat">
+                <Translate key="stat" module="structure" fallback="STAT" />
+              </Label>
+              <Input
+                id="stat"
+                bind:value={formData.stat}
+                placeholder="STAT"
+                autocomplete="one-time-code"
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="grid w-full items-center gap-1.5">
+              <Label for="rcs">
+                <Translate key="rcs" module="structure" fallback="RCS" />
+              </Label>
+              <Input
+                id="rcs"
+                bind:value={formData.rcs}
+                placeholder="RCS"
+                autocomplete="one-time-code"
+              />
+            </div>
+
+            <div class="grid w-full items-center gap-1.5">
+              <Label for="telephone">
+                <Translate key="phone" module="common" fallback="Téléphone" />
+              </Label>
+              <Input
+                id="telephone"
+                bind:value={formData.telephone}
+                placeholder="Téléphone"
+                autocomplete="one-time-code"
+              />
+            </div>
+          </div>
+
+          <div class="grid w-full items-center gap-1.5">
+            <Label for="groupe_partenaire">
+              <Translate key="partner_group" module="structure" fallback="Groupe Partenaire" />
+            </Label>
+            <Select.Root type="single" bind:value={formData.groupe_id}>
+              <Select.Trigger id="groupe_partenaire">
+                <span data-slot="select-value" class="text-muted-foreground truncate">
+                  {#if formData.groupe_id}
+                    {@const selectedGroupe = groupesPartenaires.find(g => g.id === formData.groupe_id)}
+                    {selectedGroupe ? selectedGroupe.nom : (getTranslation($i18nStore.resources, 'select_partner_group', 'structure') || 'Sélectionner un groupe partenaire')}
+                  {:else}
+                    {getTranslation($i18nStore.resources, 'select_partner_group', 'structure') || 'Sélectionner un groupe partenaire'}
+                  {/if}
+                </span>
+              </Select.Trigger>
+              <Select.Content>
+                {#if groupesLoading}
+                  <div class="p-2 text-center text-sm text-muted-foreground">
+                    <Translate key="loading" module="common" fallback="Chargement..." />
+                  </div>
+                {:else}
+                  {#each groupesPartenaires as groupe (groupe.id)}
+                    <Select.Item value={groupe.id}>{groupe.nom}</Select.Item>
+                  {/each}
+                {/if}
+              </Select.Content>
+            </Select.Root>
+          </div>
+
           <div class="grid w-full max-w-sm items-center gap-1.5">
             <Label for="coordonnees_gps">
-              <Translate key="coordinates" module="common" fallback="Coordonnées GPS" />
+              <Translate key="coordinates" module="common" fallback="Coordonnées GPS (lat,long)" />
             </Label>
             <Input
               id="coordonnees_gps"
               bind:value={formData.coordonnees_gps}
-              placeholder="Coordonnées GPS"
+              placeholder="Coordonnées GPS (ex: 48.8566,2.3522)"
               autocomplete="one-time-code"
             />
           </div>
@@ -396,6 +579,9 @@
                   <Translate key="coordinates" module="structure" fallback="Coordonnées GPS" />
                 </TableHead>
                 <TableHead>
+                  <Translate key="partner_group" module="structure" fallback="Groupe" />
+                </TableHead>
+                <TableHead>
                   <Translate key="created_at" module="common" fallback="Créé le" />
                 </TableHead>
                 <TableHead class="text-right">
@@ -409,7 +595,24 @@
                   <TableCell class="font-medium">{station.nom}</TableCell>
                   <TableCell>{station.code}</TableCell>
                   <TableCell>{station.adresse}</TableCell>
-                  <TableCell>{station.coordonnees_gps}</TableCell>
+                  <TableCell>
+                    {#if station.coordonnees_gps}
+                      {@const gpsData = safelyParseGPS(station.coordonnees_gps)}
+                      {#if gpsData}
+                        {gpsData.lat}, {gpsData.long}
+                      {:else}
+                        {station.coordonnees_gps}
+                      {/if}
+                    {/if}
+                  </TableCell>
+                  <TableCell>
+                    {#if station.groupe_id}
+                      {@const groupe = groupesPartenaires.find(g => g.id === station.groupe_id)}
+                      {groupe ? groupe.nom : 'N/A'}
+                    {:else}
+                      N/A
+                    {/if}
+                  </TableCell>
                   <TableCell>
                     {formatLocalDate(station.created_at)}
                   </TableCell>
@@ -515,14 +718,95 @@
             {/if}
           </div>
 
+          <div class="grid grid-cols-2 gap-4">
+            <div class="grid w-full items-center gap-1.5">
+              <Label for="edit-nif">
+                <Translate key="nif" module="structure" fallback="NIF" />
+              </Label>
+              <Input
+                id="edit-nif"
+                bind:value={formData.nif}
+                placeholder="NIF"
+                autocomplete="one-time-code"
+              />
+            </div>
+
+            <div class="grid w-full items-center gap-1.5">
+              <Label for="edit-stat">
+                <Translate key="stat" module="structure" fallback="STAT" />
+              </Label>
+              <Input
+                id="edit-stat"
+                bind:value={formData.stat}
+                placeholder="STAT"
+                autocomplete="one-time-code"
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="grid w-full items-center gap-1.5">
+              <Label for="edit-rcs">
+                <Translate key="rcs" module="structure" fallback="RCS" />
+              </Label>
+              <Input
+                id="edit-rcs"
+                bind:value={formData.rcs}
+                placeholder="RCS"
+                autocomplete="one-time-code"
+              />
+            </div>
+
+            <div class="grid w-full items-center gap-1.5">
+              <Label for="edit-telephone">
+                <Translate key="phone" module="common" fallback="Téléphone" />
+              </Label>
+              <Input
+                id="edit-telephone"
+                bind:value={formData.telephone}
+                placeholder="Téléphone"
+                autocomplete="one-time-code"
+              />
+            </div>
+          </div>
+
+          <div class="grid w-full items-center gap-1.5">
+            <Label for="edit-groupe_partenaire">
+              <Translate key="partner_group" module="structure" fallback="Groupe Partenaire" />
+            </Label>
+            <Select.Root type="single" bind:value={formData.groupe_id}>
+              <Select.Trigger id="edit-groupe_partenaire">
+                <span data-slot="select-value" class="text-muted-foreground truncate">
+                  {#if formData.groupe_id}
+                    {@const selectedGroupe = groupesPartenaires.find(g => g.id === formData.groupe_id)}
+                    {selectedGroupe ? selectedGroupe.nom : (getTranslation($i18nStore.resources, 'select_partner_group', 'structure') || 'Sélectionner un groupe partenaire')}
+                  {:else}
+                    {getTranslation($i18nStore.resources, 'select_partner_group', 'structure') || 'Sélectionner un groupe partenaire'}
+                  {/if}
+                </span>
+              </Select.Trigger>
+              <Select.Content>
+                {#if groupesLoading}
+                  <div class="p-2 text-center text-sm text-muted-foreground">
+                    <Translate key="loading" module="common" fallback="Chargement..." />
+                  </div>
+                {:else}
+                  {#each groupesPartenaires as groupe (groupe.id)}
+                    <Select.Item value={groupe.id}>{groupe.nom}</Select.Item>
+                  {/each}
+                {/if}
+              </Select.Content>
+            </Select.Root>
+          </div>
+
           <div class="grid w-full max-w-sm items-center gap-1.5">
             <Label for="edit-coordonnees_gps">
-              <Translate key="coordinates" module="common" fallback="Coordonnées GPS" />
+              <Translate key="coordinates" module="common" fallback="Coordonnées GPS (lat,long)" />
             </Label>
             <Input
               id="edit-coordonnees_gps"
               bind:value={formData.coordonnees_gps}
-              placeholder="Coordonnées GPS"
+              placeholder="Coordonnées GPS (ex: 48.8566,2.3522)"
               autocomplete="one-time-code"
             />
           </div>

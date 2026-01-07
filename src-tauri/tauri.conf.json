@@ -59,6 +59,9 @@
       "scope": [
         "https://successfuel-api.onrender.com/*"
       ]
+    },
+    "fs": {
+      "requireLiteralLeadingDot": false
     }
   }
 }

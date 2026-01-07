@@ -112,6 +112,17 @@
         debts: false,
         overall: false
       }
+    },
+    {
+      id: 'retail',
+      title: 'retail_setup',
+      description: 'retail_setup_description',
+      icon: '🏪',
+      route: (id: string) => `/dashboard/configuration/${id}/retail`,
+      completed: false,
+      details: {
+        overall: false
+      }
     }
   ]);
 
@@ -148,6 +159,7 @@
         employees_complete: combinedData.employees?.overall || false,
         finances_complete: combinedData.finances?.overall || false,
         balance_complete: combinedData.balance?.overall || false,
+        retail_complete: combinedData.retail?.overall || false,
         is_complete: false, // À déterminer selon les autres complétions
         created_at: stationData.created_at,
         updated_at: stationData.updated_at
@@ -160,7 +172,8 @@
           configurationState.partners_complete &&
           configurationState.employees_complete &&
           configurationState.finances_complete &&
-          configurationState.balance_complete;
+          configurationState.balance_complete &&
+          configurationState.retail_complete;
       }
 
       // Mise à jour des statuts de complétion
@@ -184,6 +197,7 @@
         employees_complete: false,
         finances_complete: false,
         balance_complete: false,
+        retail_complete: false,
         is_complete: false,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
@@ -247,6 +261,12 @@
             overall: completionData.balance?.overall || false
           };
           break;
+        case 'retail':
+          step.completed = completionData.retail?.overall || false;
+          step.details = {
+            overall: completionData.retail?.overall || false
+          };
+          break;
       }
     });
   }
@@ -263,6 +283,16 @@
     const step = configSteps.find(s => s.id === stepId);
     if (!step || !step.details) {
       return { completed: 0, total: 0, percentage: 0 };
+    }
+
+    if (step.id === 'retail') {
+      // Pour l'étape retail, il n'y a qu'une seule sous-étape (overall)
+      const isCompleted = step.details.overall || false;
+      return {
+        completed: isCompleted ? 1 : 0,
+        total: 1,
+        percentage: isCompleted ? 100 : 0
+      };
     }
 
     // Compter les sous-étapes complétées (excluant le champ 'overall')
@@ -284,7 +314,7 @@
       // Première étape n'a pas de dépendance
       return null;
     }
-    
+
     // Retourne l'état de complétion de l'étape précédente
     return configSteps[stepIndex - 1].completed;
   }

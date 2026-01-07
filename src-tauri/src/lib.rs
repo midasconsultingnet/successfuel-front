@@ -68,6 +68,9 @@ pub fn run() {
             std::env::var("VITE_API_BASE_URL")
                 .unwrap_or_else(|_| "https://successfuel-api.onrender.com/api/v1".to_string())
         ).expect("Impossible de créer l'état d'authentification"))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
