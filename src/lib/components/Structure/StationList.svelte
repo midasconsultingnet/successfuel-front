@@ -137,10 +137,10 @@
     }
 
     // Appel API pour créer la station
-    stationService.createStation({
+    const createData = {
       nom: formData.nom,
       code: formData.code,
-      adresse: formData.adresse,
+      adresse: formData.adresse || '', // Toujours une chaîne pour CreateStationRequest
       coordonnees_gps: gpsData ? JSON.stringify(gpsData) : null,
       groupe_id: formData.groupe_id || null,
       infos_plus: {
@@ -149,7 +149,8 @@
         rcs: formData.rcs,
         telephone: formData.telephone
       }
-    })
+    } as import('$lib/services/StationService').CreateStationRequest;
+    stationService.createStation(createData)
       .then((newStation) => {
         stations = [...stations, newStation];
         isCreateDialogOpen = false;
@@ -211,10 +212,10 @@
     }
 
     // Appel API pour mettre à jour la station
-    stationService.updateStation(editingStation.id, {
+    const updateData = {
       nom: formData.nom,
       code: formData.code,
-      adresse: formData.adresse,
+      adresse: formData.adresse || null, // Peut être null pour UpdateStationRequest
       coordonnees_gps: gpsData ? JSON.stringify(gpsData) : null,
       groupe_id: formData.groupe_id || null,
       infos_plus: {
@@ -223,7 +224,8 @@
         rcs: formData.rcs,
         telephone: formData.telephone
       }
-    })
+    } as import('$lib/services/StationService').UpdateStationRequest;
+    stationService.updateStation(editingStation.id, updateData)
       .then((updatedStation) => {
         stations = stations.map(s => s.id === updatedStation.id ? updatedStation : s);
         isEditDialogOpen = false;

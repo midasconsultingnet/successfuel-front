@@ -99,8 +99,10 @@
   // États pour la gestion des stocks initiaux
   let selectedTankForStock = $state<string>('');
   let initialTankLevel = $state<string>('');
+  let initialStockMinThreshold = $state<number>(0); // Seuil de stock minimum
   let editingStock = $state<TankInitialStock | null>(null);
   let editInitialLevel = $state<string>('');
+  let editStockMinThreshold = $state<number>(0); // Seuil de stock minimum pour l'édition
   let showEditStockDialog = $state(false);
   let showAddStockDialog = $state(false);
 
@@ -119,6 +121,13 @@
     currentCalibrationVolume = 0;
     tankCalibrationInput = '';
     addTankError = null;
+  }
+
+  // Fonction pour réinitialiser les champs du formulaire de stock initial
+  function resetAddStockFields() {
+    selectedTankForStock = '';
+    initialTankLevel = '';
+    initialStockMinThreshold = 0;
   }
 
   function resetEditTankFields() {
@@ -594,7 +603,7 @@
           const tank = tanks.find(t => t.id === stock.cuve_id);
           return {
             tank: tank?.nom || `Cuve ${stock.cuve_id.substring(0, 8)}`,
-            level: stock.niveau_initial,
+            level: stock.hauteur_jauge_initiale,
             unit: 'L'
           };
         });
@@ -1097,8 +1106,24 @@
         throw new Error(get(i18nStore).resources?.configuration?.tank_already_has_initial_stock || 'Cette cuve a déjà un stock initial');
       }
 
+      // Trouver la cuve sélectionnée pour obtenir les prix du carburant
+      const selectedTank = tanks.find(tank => tank.id === selectedTankForStock);
+      if (!selectedTank) {
+        throw new Error('Cuve non trouvée');
+      }
+
+      // Trouver les prix du carburant pour cette cuve
+      const fuelPrice = stationFuels.find(fuel => fuel.carburant_id === selectedTank.carburant_id);
+      if (!fuelPrice) {
+        throw new Error('Prix du carburant non trouvé pour cette cuve');
+      }
+
       const requestData = {
-        hauteur_jauge_initiale: levelValue
+        cuve_id: selectedTankForStock,
+        hauteur_jauge_initiale: levelValue,
+        cout_moyen: fuelPrice.prix_achat, // Prix d'achat du carburant
+        prix_vente: fuelPrice.prix_vente, // Prix de vente du carburant
+        seuil_stock_min: initialStockMinThreshold
       };
 
       const newInitialStock = await tankInitialStockService.createTankInitialStock(selectedTankForStock, requestData);
@@ -1106,17 +1131,33 @@
       // Ajouter le nouvel état initial à la liste avec les informations de la cuve
       // Trouver la cuve correspondante dans la liste des cuves pour enrichir les données
       const tank = tanks.find(t => t.id === newInitialStock.cuve_id);
-      const stockWithTank = {
+      const stockWithTank: TankInitialStock = {
         ...newInitialStock,
-        cuve: tank // Ajouter les informations de la cuve
+        cuve: tank ? {
+          ...tank,
+          carburant: tank.carburant || {
+            id: '',
+            libelle: '',
+            code: ''
+          }
+        } : {
+          id: newInitialStock.cuve_id,
+          nom: `Cuve ${newInitialStock.cuve_id.substring(0, 8)}`,
+          code: `C-${newInitialStock.cuve_id.substring(0, 4)}`,
+          capacite_maximale: 0,
+          carburant: {
+            id: '',
+            libelle: '',
+            code: ''
+          }
+        } // Ajouter les informations de la cuve
       };
 
       // Ajouter le nouvel état initial à la liste
       initialStocks = [...initialStocks, stockWithTank];
 
       // Réinitialiser le formulaire
-      selectedTankForStock = '';
-      initialTankLevel = '';
+      resetAddStockFields();
 
       console.log('Stock initial ajouté avec succès:', stockWithTank);
     } catch (err) {
@@ -1129,6 +1170,7 @@
   function prepareEditStock(stock: TankInitialStock) {
     editingStock = stock;
     editInitialLevel = stock.hauteur_jauge_initiale.toString();
+    editStockMinThreshold = stock.seuil_stock_min || 0; // Initialiser avec la valeur existante
     showEditStockDialog = true;
   }
 
@@ -1145,8 +1187,24 @@
         throw new Error(get(i18nStore).resources?.configuration?.invalid_initial_level || 'Veuillez entrer un niveau initial valide');
       }
 
+      // Trouver la cuve de l'élément en cours d'édition pour obtenir les prix du carburant
+      const selectedTank = tanks.find(tank => tank.id === editingStock?.cuve_id);
+      if (!selectedTank) {
+        throw new Error('Cuve non trouvée');
+      }
+
+      // Trouver les prix du carburant pour cette cuve
+      const fuelPrice = stationFuels.find(fuel => fuel.carburant_id === selectedTank.carburant_id);
+      if (!fuelPrice) {
+        throw new Error('Prix du carburant non trouvé pour cette cuve');
+      }
+
       const requestData = {
-        hauteur_jauge_initiale: levelValue
+        cuve_id: editingStock.cuve_id,
+        hauteur_jauge_initiale: levelValue,
+        cout_moyen: fuelPrice.prix_achat, // Prix d'achat du carburant
+        prix_vente: fuelPrice.prix_vente, // Prix de vente du carburant
+        seuil_stock_min: editStockMinThreshold
       };
 
       const updatedStock = await tankInitialStockService.updateTankInitialStock(editingStock.cuve_id, requestData);
@@ -2437,6 +2495,17 @@
                         placeholder={get(i18nStore).resources?.configuration?.initial_level_placeholder || 'Hauteur en cm'}
                       />
                     </div>
+                    <div class="space-y-2">
+                      <Label for="stock-min-threshold">
+                        <Translate key="stock_min_threshold" module="configuration" fallback="Seuil minimum de stock" />
+                      </Label>
+                      <Input
+                        id="stock-min-threshold"
+                        type="number"
+                        bind:value={initialStockMinThreshold}
+                        placeholder={get(i18nStore).resources?.configuration?.stock_min_threshold_placeholder || 'Seuil minimum de stock'}
+                      />
+                    </div>
                   </div>
                   <div class="flex justify-end space-x-2">
                     <Button
@@ -2483,6 +2552,17 @@
                         type="number"
                         bind:value={editInitialLevel}
                         placeholder={get(i18nStore).resources?.configuration?.initial_level_placeholder || 'Hauteur en cm'}
+                      />
+                    </div>
+                    <div class="space-y-2">
+                      <Label for="edit-stock-min-threshold">
+                        <Translate key="stock_min_threshold" module="configuration" fallback="Seuil minimum de stock" />
+                      </Label>
+                      <Input
+                        id="edit-stock-min-threshold"
+                        type="number"
+                        bind:value={editStockMinThreshold}
+                        placeholder={get(i18nStore).resources?.configuration?.stock_min_threshold_placeholder || 'Seuil minimum de stock'}
                       />
                     </div>
                     <div class="text-sm text-muted-foreground">

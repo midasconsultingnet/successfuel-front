@@ -112,8 +112,18 @@
   let editingDebt = $state<SoldeTiersResponse | null>(null);
 
   // Effets réactifs pour réinitialiser la sélection d'entité quand le type change
-  let previousReceivableType = $state(receivableEntityTypeValue);
-  let previousDebtType = $state(debtEntityTypeValue);
+  let previousReceivableType = $state('');
+  let previousDebtType = $state('');
+
+  // Initialiser les valeurs précédentes avec les valeurs actuelles
+  $effect(() => {
+    if (!previousReceivableType) {
+      previousReceivableType = receivableEntityTypeValue;
+    }
+    if (!previousDebtType) {
+      previousDebtType = debtEntityTypeValue;
+    }
+  });
 
   $effect(() => {
     if (receivableEntityTypeValue !== previousReceivableType) {
@@ -1743,7 +1753,7 @@
                 <Translate key="entity" module="configuration" fallback="Entité" />
               </Label>
               <div id="editReceivableEntityDisplay" class="px-3 py-2 border rounded-md bg-muted">
-                {getEntityOptions().find(option => option.id === editingReceivable.tiers_id)?.name ||
+                {editingReceivable?.tiers_id && getEntityOptions().find(option => option.id === (editingReceivable as any).tiers_id)?.name ||
                 (get(i18nStore).resources?.configuration?.select_entity_placeholder || 'Entité non trouvée')}
               </div>
             </div>
@@ -1829,7 +1839,7 @@
                 <Translate key="entity" module="configuration" fallback="Entité" />
               </Label>
               <div id="editDebtEntityDisplay" class="px-3 py-2 border rounded-md bg-muted">
-                {getEntityOptions().find(option => option.id === editingDebt.tiers_id)?.name ||
+                {editingDebt?.tiers_id && getEntityOptions().find(option => option.id === (editingDebt as any).tiers_id)?.name ||
                 (get(i18nStore).resources?.configuration?.select_entity_placeholder || 'Entité non trouvée')}
               </div>
             </div>

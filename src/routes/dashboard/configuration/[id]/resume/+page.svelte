@@ -291,7 +291,7 @@
               <Translate key="back" module="common" fallback="Retour" />
             </Button>
             <Dialog>
-              <DialogTrigger asChild>
+              <DialogTrigger>
                 <Button
                   variant="default"
                   disabled={activationLoading}

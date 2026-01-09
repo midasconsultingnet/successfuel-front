@@ -247,5 +247,7 @@
   "save_error_title": "Erreur de sauvegarde",
   "save_error_description": "Une erreur est survenue lors de la sauvegarde de la configuration",
   "products_saved": "Produits sauvegardés avec succès",
-  "save_error": "Erreur lors de la sauvegarde des produits"
+  "save_error": "Erreur lors de la sauvegarde des produits",
+  "stock_min_threshold": "Seuil minimum de stock",
+  "stock_min_threshold_placeholder": "Seuil minimum de stock"
 }

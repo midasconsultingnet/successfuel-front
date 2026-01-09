@@ -148,6 +148,8 @@
             has_stock: hasStock
           };
 
+          let createdProduct = null;
+
           // Si le produit a un ID existant, on le met à jour, sinon on le crée
           if (product.apiId) {
             await familleProduitService.updateProduit(product.apiId, {
@@ -158,15 +160,15 @@
               has_stock: hasStock
             });
           } else {
-            const createdProduct = await familleProduitService.createProduit(produitPayload);
+            createdProduct = await familleProduitService.createProduit(produitPayload);
             // Mettre à jour l'ID API du produit local
             product.apiId = createdProduct.id;
           }
 
           // Si le produit a un stock (non service), initialiser le stock
-          if (hasStock) {
+          if (hasStock && (product.apiId || createdProduct)) {
             await familleProduitService.initializeStock({
-              produit_id: product.apiId || createdProduct.id,
+              produit_id: product.apiId || createdProduct?.id,
               station_id: stationId,
               quantite_initiale: product.stock || 0,
               cout_unitaire: product.purchase_price || 0,  // Prix d'achat
@@ -1011,7 +1013,7 @@
                           class={validateProduct(product.id).isValid ? '' : 'border-red-500'}
                         />
                       </td>
-                      <td class="py-2 px-4" on:keydown={(e) => handleKeydown(e, index)}>
+                      <td class="py-2 px-4" onkeydown={(e) => handleKeydown(e, index)}>
                         <Input
                           bind:value={product.description}
                           placeholder={get(i18nStore)?.resources?.configuration?.product_description_placeholder || 'Description'}
@@ -1157,7 +1159,7 @@
                           class={validateProduct(product.id).isValid ? '' : 'border-red-500'}
                         />
                       </td>
-                      <td class="py-2 px-4" on:keydown={(e) => handleKeydown(e, index)}>
+                      <td class="py-2 px-4" onkeydown={(e) => handleKeydown(e, index)}>
                         <Input
                           bind:value={product.description}
                           placeholder={get(i18nStore)?.resources?.configuration?.product_description_placeholder || 'Description'}
@@ -1303,7 +1305,7 @@
                           class={validateProduct(product.id).isValid ? '' : 'border-red-500'}
                         />
                       </td>
-                      <td class="py-2 px-4" on:keydown={(e) => handleKeydown(e, index)}>
+                      <td class="py-2 px-4" onkeydown={(e) => handleKeydown(e, index)}>
                         <Input
                           bind:value={product.description}
                           placeholder={get(i18nStore)?.resources?.configuration?.product_description_placeholder || 'Description'}
@@ -1390,14 +1392,14 @@
                       <td class="py-2 px-4">
                         <Input
                           value={product.name}
-                          onInput={(e) => updateProduct(index, 'name', e.target.value)}
+                          oninput={(e) => updateProduct(index, 'name', e.currentTarget.value)}
                           placeholder={get(i18nStore)?.resources?.configuration?.service_name_placeholder || 'Nom du service'}
                         />
                       </td>
                       <td class="py-2 px-4">
                         <Input
                           value={product.code}
-                          onInput={(e) => updateProduct(index, 'code', e.target.value)}
+                          oninput={(e) => updateProduct(index, 'code', e.currentTarget.value)}
                           placeholder={get(i18nStore)?.resources?.configuration?.service_code_placeholder || 'Code du service'}
                         />
                       </td>
@@ -1405,7 +1407,7 @@
                         <Input
                           type="number"
                           value={product.purchase_price}
-                          onInput={(e) => updateProduct(index, 'purchase_price', parseFloat(e.target.value) || 0)}
+                          oninput={(e) => updateProduct(index, 'purchase_price', parseFloat(e.currentTarget.value) || 0)}
                           placeholder="0.00"
                         />
                       </td>
@@ -1413,15 +1415,15 @@
                         <Input
                           type="number"
                           value={product.sale_price}
-                          onInput={(e) => updateProduct(index, 'sale_price', parseFloat(e.target.value) || 0)}
+                          oninput={(e) => updateProduct(index, 'sale_price', parseFloat(e.currentTarget.value) || 0)}
                           placeholder="0.00"
                         />
                       </td>
                       <td class="py-2 px-4">
                         <Input
                           value={product.description}
-                          onInput={(e) => updateProduct(index, 'description', e.target.value)}
-                          on:keydown={(e) => handleLastFieldEnter(e, index)}
+                          oninput={(e) => updateProduct(index, 'description', e.currentTarget.value)}
+                          onkeydown={(e) => handleLastFieldEnter(e, index)}
                           placeholder={get(i18nStore)?.resources?.configuration?.service_description_placeholder || 'Description'}
                         />
                       </td>
@@ -1485,7 +1487,7 @@
               id="excel-file-input"
               accept=".xlsx, .xls"
               class="hidden"
-              on:change={handleFileSelect}
+              onchange={handleFileSelect}
             />
           </div>
         </div>

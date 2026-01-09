@@ -69,8 +69,8 @@ export class ImmobilisationService {
       // Gérer les deux formats de réponse : { data: [] } ou directement []
       if (Array.isArray(response)) {
         return response;
-      } else if (response && typeof response === 'object' && Array.isArray(response.data)) {
-        return response.data;
+      } else if (response && typeof response === 'object' && 'data' in response && Array.isArray(response.data)) {
+        return response.data as Immobilisation[];
       } else {
         // Si ce n'est ni un tableau ni un objet avec une propriété data qui est un tableau
         // on renvoie un tableau vide
@@ -106,11 +106,11 @@ export class ImmobilisationService {
       const response = await apiService.get(`${this.basePath}/${immobilisationId}`);
 
       // Gérer les deux formats de réponse : { data: {} } ou directement {}
-      if (response && typeof response === 'object' && response.data && typeof response.data === 'object') {
-        return response.data;
+      if (response && typeof response === 'object' && 'data' in response && response.data && typeof response.data === 'object') {
+        return response.data as Immobilisation;
       } else {
         // Si la réponse n'est pas un objet avec une propriété data, on suppose que c'est directement l'objet
-        return response;
+        return response as Immobilisation;
       }
     } catch (error) {
       const processedError = handleError(error);
@@ -126,11 +126,11 @@ export class ImmobilisationService {
       const response = await apiService.post(`${this.basePath}`, data);
 
       // Gérer les deux formats de réponse : { data: {} } ou directement {}
-      if (response && typeof response === 'object' && response.data && typeof response.data === 'object') {
-        return response.data;
+      if (response && typeof response === 'object' && 'data' in response && response.data && typeof response.data === 'object') {
+        return response.data as Immobilisation;
       } else {
         // Si la réponse n'est pas un objet avec une propriété data, on suppose que c'est directement l'objet
-        return response;
+        return response as Immobilisation;
       }
     } catch (error) {
       const processedError = handleError(error);
@@ -146,11 +146,11 @@ export class ImmobilisationService {
       const response = await apiService.put(`${this.basePath}/${immobilisationId}`, data);
 
       // Gérer les deux formats de réponse : { data: {} } ou directement {}
-      if (response && typeof response === 'object' && response.data && typeof response.data === 'object') {
-        return response.data;
+      if (response && typeof response === 'object' && 'data' in response && response.data && typeof response.data === 'object') {
+        return response.data as Immobilisation;
       } else {
         // Si la réponse n'est pas un objet avec une propriété data, on suppose que c'est directement l'objet
-        return response;
+        return response as Immobilisation;
       }
     } catch (error) {
       const processedError = handleError(error);

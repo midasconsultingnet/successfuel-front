@@ -4,6 +4,7 @@
   import { treasuryService } from '$lib/services/TreasuryService';
   import { paymentMethodService } from '$lib/services/PaymentMethodService';
   import { treasuryInitialStateService } from '$lib/services/TreasuryInitialStateService';
+  import { stationService } from '$lib/services/StationService';
   import { formatCurrency } from '$lib/utils/numbers';
   import { i18nStore } from '$lib/i18n';
   import Translate from '$lib/i18n/Translate.svelte';
@@ -62,7 +63,7 @@
   let treasuryName = $state('');
   let treasuryType = $state<'caisse' | 'banque' | 'mobile_money' | 'note_credit' | 'fonds_divers' | 'autres'>('caisse');
   let treasuryInitialBalance = $state(0);
-  let treasuryBankDetails = $state<Record<string, any> | null>(null);
+  let treasuryBankDetails = $state<Record<string, any> | string | null>(null);
   let treasuryTypeValue = $state<string>('caisse');
   let selectedUnlinkedTreasuryId = $state<string>('');
 
@@ -86,8 +87,16 @@
   let editingPaymentMethodTreasuryIdValue = $state<string>('');
   let editingPaymentMethodStatus = $state<string>('active');
 
+  // États pour l'édition des soldes
+  let editingBalance = $state<TreasuryInitialBalanceConfig | null>(null);
+  let editingBalanceTreasuryIdValue = $state<string>('');
+  let showEditBalanceDialog = $state(false);
+
   // État pour suivre les trésoreries partagées
   let sharedTreasuries = $state<Set<string>>(new Set());
+
+  // État pour les soldes de trésorerie
+  let treasuryBalances = $state<TreasuryInitialBalanceConfig[]>([]);
 
   // Fonction pour déterminer les trésoreries partagées
   async function loadSharedTreasuries() {
@@ -206,7 +215,7 @@
         allPaymentMethods = allPaymentMethodsFromApi.map(pm => ({
           id: pm.id,
           name: pm.nom,
-          treasury_id: pm.tresorerie_id || undefined,
+          treasury_id: pm.tresorerie_id || '',
           actif: pm.tresorerie_id ? true : false
         }));
 
@@ -233,8 +242,8 @@
 
       } else {
         // Charger les données financières de la station - simulation avec données mockées
-        treasuries = generateMockTreasuries();
-        paymentMethods = generateMockPaymentMethods();
+        treasuries = [];
+        paymentMethods = [];
       }
 
     } catch (err) {
@@ -391,7 +400,7 @@
       treasuryType = 'caisse';
       treasuryTypeValue = 'caisse';
       treasuryInitialBalance = 0;
-      treasuryBankDetails = '';
+      treasuryBankDetails = null;
 
       console.log('Trésorerie ajoutée avec succès:', newTreasuryFromApi);
     } catch (err) {
@@ -502,15 +511,26 @@
 
   // Fonction pour préparer l'édition d'une trésorerie
   function prepareEditTreasury(treasury: TreasuryConfig) {
-    editingTreasury = { ...treasury };
+    editingTreasury = { ...treasury, initial_balance: treasury.initial_balance || 0 };
     editingTreasuryTypeValue = treasury.type;
     treasuryTypeValue = treasury.type;
     // Convertir les détails bancaires en chaîne JSON pour l'affichage dans la textarea
+    let bankDetailsObj: Record<string, any> = {};
     if (treasury.bank_details) {
-      treasuryBankDetails = JSON.stringify(treasury.bank_details, null, 2); // Formatage avec indentation
-    } else {
-      treasuryBankDetails = null;
+      if (typeof treasury.bank_details === 'string') {
+        // Si c'est une chaîne, on suppose que c'est une chaîne JSON et on la parse
+        try {
+          bankDetailsObj = JSON.parse(treasury.bank_details);
+        } catch (e) {
+          // Si la chaîne n'est pas un JSON valide, on la traite comme un objet vide
+          bankDetailsObj = {};
+        }
+      } else if (typeof treasury.bank_details === 'object' && !Array.isArray(treasury.bank_details)) {
+        // Si c'est un objet, on l'utilise directement
+        bankDetailsObj = treasury.bank_details;
+      }
     }
+    treasuryBankDetails = JSON.stringify(bankDetailsObj, null, 2); // Formatage avec indentation
     showEditTreasuryDialog = true;
   }
 
@@ -801,7 +821,7 @@
       // Mettre à jour aussi l'objet trésorerie dans la liste des trésoreries pour refléter le nouveau solde initial
       treasuries = treasuries.map(t =>
         t.id === updatedTreasuryId
-          ? { ...t, initial_balance: editingBalance.initial_balance || 0 }
+          ? { ...t, initial_balance: editingBalance ? editingBalance.initial_balance || 0 : 0 }
           : t
       );
 
@@ -1139,8 +1159,8 @@
                               </Select.Trigger>
                               <Select.Content>
                                 {#each getUnlinkedTreasuries() as treasury}
-                                  <Select.Item value={treasury.id}>
-                                    {treasury.name} ({treasury.type})
+                                  <Select.Item value={treasury.id || ''}>
+                                    {(treasury.name || '')} ({treasury.type || ''})
                                   </Select.Item>
                                 {/each}
                               </Select.Content>
@@ -1164,7 +1184,7 @@
                             treasuryName = '';
                             treasuryType = 'caisse';
                             treasuryTypeValue = 'caisse';
-                            treasuryBankDetails = '';
+                            treasuryBankDetails = null;
                             selectedUnlinkedTreasuryId = '';
                           }}
                         >
@@ -1196,7 +1216,7 @@
                           <Label>
                             <Translate key="current_balance" module="configuration" fallback="Solde de la trésorerie" />
                           </Label>
-                          <p class="font-medium">{formatCurrency(treasury.solde_tresorerie) ?? 'N/A'}</p>
+                          <p class="font-medium">{treasury.solde_tresorerie !== undefined ? formatCurrency(treasury.solde_tresorerie) : 'N/A'}</p>
                         </div>
                         <div>
                           <Label>
@@ -1599,7 +1619,7 @@
 
 
 
-            {#if editingTreasury && !sharedTreasuries.has(editingTreasury.id)}
+            {#if editingTreasury?.id && !sharedTreasuries.has(editingTreasury.id)}
             <div class="space-y-2">
               <Label for="editTreasuryInitialBalance">
                 <Translate key="initial_balance" module="configuration" fallback="Solde initial" />

@@ -82,7 +82,7 @@ class FamilleProduitService {
 
   async createProduit(payload: CreateProduitPayload): Promise<Produit> {
     try {
-      const response = await apiService.post<CreateProduitPayload, Produit>('/produits/', payload);
+      const response = await apiService.post<Produit>('/produits/', payload);
       return response;
     } catch (error) {
       handleError(error);
@@ -92,7 +92,7 @@ class FamilleProduitService {
 
   async updateProduit(produitId: string, payload: UpdateProduitPayload): Promise<Produit> {
     try {
-      const response = await apiService.put<UpdateProduitPayload, Produit>(`/produits/${produitId}`, payload);
+      const response = await apiService.put<Produit>(`/produits/${produitId}`, payload);
       return response;
     } catch (error) {
       handleError(error);
@@ -102,7 +102,7 @@ class FamilleProduitService {
 
   async initializeStock(payload: StockInitialPayload): Promise<any> {
     try {
-      const response = await apiService.post<StockInitialPayload, any>('/stocks/stocks_initiaux', payload);
+      const response = await apiService.post<any>('/stocks/stocks_initiaux', payload);
       return response;
     } catch (error) {
       handleError(error);

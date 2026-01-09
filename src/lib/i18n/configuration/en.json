@@ -247,5 +247,7 @@
   "save_error_title": "Save Error",
   "save_error_description": "An error occurred while saving the configuration",
   "products_saved": "Products saved successfully",
-  "save_error": "Error saving products"
+  "save_error": "Error saving products",
+  "stock_min_threshold": "Minimum stock threshold",
+  "stock_min_threshold_placeholder": "Minimum stock threshold"
 }

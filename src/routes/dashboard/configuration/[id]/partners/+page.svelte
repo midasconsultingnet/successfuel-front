@@ -202,9 +202,11 @@
       const newSupplierData: CreateSupplierRequest = {
         nom: supplierName,
         code: supplierName.substring(0, 3).toUpperCase() + Date.now().toString().slice(-4), // Générer un code unique
+        contact_person: supplierContactPerson || supplierName,
         email: supplierEmail,
         telephone: supplierPhone,
         adresse: supplierAddress,
+        type: supplierType || 'other',
         donnees_personnelles: {
           contact_person: supplierContactPerson || supplierName
         },  // Données personnelles contenant le contact
@@ -344,9 +346,11 @@
       const newCustomerData: CreateCustomerRequest = {
         nom: customerName,
         code: customerName.substring(0, 3).toUpperCase() + Date.now().toString().slice(-4), // Générer un code unique
+        contact_person: customerContactPerson || customerName,
         email: customerEmail,
         telephone: customerPhone,
         adresse: customerAddress,
+        categorie: customerCategory || 'particulier',
         donnees_personnelles: {
           contact_person: customerContactPerson || customerName
         },  // Données personnelles contenant le contact

@@ -12,18 +12,23 @@
   let isAuthenticated = $state(false);
   let isLoading = $state(true);
 
-  onMount(async () => {
-    const authState = get(authStore);
+  // Vérifier l'état d'authentification au montage
+  onMount(() => {
+    const unsubscribe = authStore.subscribe((state) => {
+      if (!state.isAuthenticated && !state.isLoading) {
+        // Rediriger vers la page de login avec redirection vers la page actuelle
+        const currentPath = get(page).url.pathname;
+        goto(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
+        return;
+      }
 
-    if (!authState.isAuthenticated) {
-      // Rediriger vers la page de login avec redirection vers la page actuelle
-      const currentPath = get(page).url.pathname;
-      goto(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
-      return;
-    }
+      // Mettre à jour l'état local
+      isAuthenticated = state.isAuthenticated;
+      isLoading = state.isLoading;
+    });
 
-    isAuthenticated = true;
-    isLoading = false;
+    // Nettoyer l'abonnement lors du démontage
+    return () => unsubscribe();
   });
 
   // Props
@@ -31,17 +36,18 @@
 </script>
 
 <I18nProvider>
-  <SessionExpiredHandler />
-  {#if isLoading}
-    <div class="flex justify-center items-center h-screen">
-      <p>Chargement...</p>
-    </div>
-  {:else if isAuthenticated}
-    
-      <main>
-        <DashboardLayout>
-          {@render children?.()}
-        </DashboardLayout>
-      </main>
-  {/if}
+  <SessionExpiredHandler>
+    {#if isLoading}
+      <div class="flex justify-center items-center h-screen">
+        <p>Chargement...</p>
+      </div>
+    {:else if isAuthenticated}
+
+        <main>
+          <DashboardLayout>
+            {@render children?.()}
+          </DashboardLayout>
+        </main>
+    {/if}
+  </SessionExpiredHandler>
 </I18nProvider>

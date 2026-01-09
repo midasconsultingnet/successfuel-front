@@ -75,50 +75,6 @@ export const getCurrentUser = () => {
   return get(authStore).user;
 };
 
-/**
- * Extrait le payload d'un JWT (côté client uniquement pour affichage)
- * ATTENTION : Ne doit pas être utilisé pour valider la véracité du token
- * La validation de la signature JWT doit toujours être faite côté backend
- * @param token - Le token JWT
- * @returns any - Le payload du token (à utiliser uniquement pour afficher des informations)
- */
-export const parseJwt = (token: string): any => {
-  try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    );
-
-    return JSON.parse(jsonPayload);
-  } catch (e) {
-    console.error('Erreur lors du parsing du JWT:', e);
-    return null;
-  }
-};
-
-/**
- * Vérifie si le token est sur le point d'expirer (dans les 5 prochaines minutes)
- * @returns boolean - true si le token est sur le point d'expirer
- */
-export const isTokenExpiringSoon = (): boolean => {
-  const token = getAccessToken();
-  if (!token) return true; // Si pas de token, on considère qu'il expire
-
-  try {
-    const payload = parseJwt(token);
-    const expiry = payload.exp * 1000; // Convertir en millisecondes
-    const fiveMinutes = 5 * 60 * 1000; // 5 minutes en millisecondes
-    
-    return Date.now() >= (expiry - fiveMinutes);
-  } catch (e) {
-    console.error('Erreur lors de la vérification de l\'expiration du token:', e);
-    return true; // En cas d'erreur, on considère le token comme expirant
-  }
-};
 
 /**
  * Attend que l'utilisateur soit authentifié

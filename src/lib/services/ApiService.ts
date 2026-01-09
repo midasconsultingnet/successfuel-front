@@ -1,7 +1,8 @@
 import { HttpClient } from './HttpClient';
 import type { HttpRequestConfig, NotificationHandler } from './HttpClient';
 import { i18nStore } from '$lib/i18n';
-import { authService } from './AuthService';
+import { authManager } from './AuthManager';
+import { AUTH_CONFIG } from '../config/authConfig';
 
 // Configuration de l'API principale
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -34,7 +35,7 @@ class ApiService extends HttpClient {
   }
 
   private checkAndSetAuthToken() {
-    const token = localStorage.getItem('access_token');
+    const token = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
     if (token) {
       this.setDefaultHeader('Authorization', `Bearer ${token}`);
     } else {
@@ -54,7 +55,7 @@ class ApiService extends HttpClient {
 
   private setupAuthInterceptor() {
     // Écoute les changements de token d'authentification et met à jour les headers
-    const authToken = localStorage.getItem('access_token');
+    const authToken = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
     if (authToken) {
       this.setDefaultHeader('Authorization', `Bearer ${authToken}`);
     }
@@ -62,7 +63,7 @@ class ApiService extends HttpClient {
     // Écouter les changements de token dans localStorage
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', (event) => {
-        if (event.key === 'access_token') {
+        if (event.key === AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN) {
           if (event.newValue) {
             this.setDefaultHeader('Authorization', `Bearer ${event.newValue}`);
           } else {
@@ -77,34 +78,34 @@ class ApiService extends HttpClient {
   setAuthToken(token: string | null, expiry: Date | null = null) {
     if (token) {
       this.setDefaultHeader('Authorization', `Bearer ${token}`);
-      localStorage.setItem('access_token', token);
+      localStorage.setItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN, token);
 
       // Stocker la date d'expiration pour éviter le décodage JWT
       if (expiry) {
-        localStorage.setItem('access_token_expiry', expiry.getTime().toString());
+        localStorage.setItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY, expiry.getTime().toString());
       }
     } else {
       this.removeDefaultHeader('Authorization');
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('access_token_expiry');
+      localStorage.removeItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
+      localStorage.removeItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
     }
   }
 
   // Surcharge des méthodes pour gérer automatiquement le rafraîchissement du token
   async get<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
-    return authService.handleRequestWithAuth(() => super.get<T>(endpoint, config, customFetch));
+    return authManager.handleRequestWithAuth(() => super.get<T>(endpoint, config, customFetch));
   }
 
   async post<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
-    return authService.handleRequestWithAuth(() => super.post<T>(endpoint, data, config, customFetch));
+    return authManager.handleRequestWithAuth(() => super.post<T>(endpoint, data, config, customFetch));
   }
 
   async put<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
-    return authService.handleRequestWithAuth(() => super.put<T>(endpoint, data, config, customFetch));
+    return authManager.handleRequestWithAuth(() => super.put<T>(endpoint, data, config, customFetch));
   }
 
   async delete<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
-    return authService.handleRequestWithAuth(() => super.delete<T>(endpoint, config, customFetch));
+    return authManager.handleRequestWithAuth(() => super.delete<T>(endpoint, config, customFetch));
   }
 
   // Nettoyage des ressources

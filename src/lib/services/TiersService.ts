@@ -47,7 +47,7 @@ export class TiersService {
    */
   async getTiersById(tiersId: string): Promise<Tiers> {
     const response = await apiService.get(`/tiers/tiers/${tiersId}`);
-    return response;
+    return response as Tiers;
   }
 
   /**
@@ -55,7 +55,7 @@ export class TiersService {
    */
   async getSoldesByTiers(tiersId: string): Promise<SoldeTiersResponse[]> {
     const response = await apiService.get(`/tiers/tiers/${tiersId}/soldes`);
-    return response;
+    return response as SoldeTiersResponse[];
   }
 
   /**
@@ -63,7 +63,7 @@ export class TiersService {
    */
   async getSoldeByTiersAndStation(tiersId: string, stationId: string): Promise<SoldeTiersResponse> {
     const response = await apiService.get(`/tiers/tiers/${tiersId}/soldes/${stationId}`);
-    return response;
+    return response as SoldeTiersResponse;
   }
 
   /**
@@ -71,7 +71,7 @@ export class TiersService {
    */
   async createSoldeTiers(tiersId: string, stationId: string, soldeData: SoldeTiersCreate): Promise<SoldeTiersResponse> {
     const response = await apiService.post(`/tiers/tiers/${tiersId}/soldes/${stationId}`, soldeData);
-    return response;
+    return response as SoldeTiersResponse;
   }
 
   /**
@@ -79,7 +79,7 @@ export class TiersService {
    */
   async updateSoldeTiers(tiersId: string, stationId: string, soldeData: SoldeTiersUpdate): Promise<SoldeTiersResponse> {
     const response = await apiService.put(`/tiers/tiers/${tiersId}/soldes/${stationId}`, soldeData);
-    return response;
+    return response as SoldeTiersResponse;
   }
 
   /**
@@ -99,7 +99,7 @@ export class TiersService {
    */
   async getSoldesByStation(stationId: string): Promise<SoldeTiersResponse[]> {
     const response = await apiService.get(`/tiers/stations/${stationId}/soldes`);
-    return response;
+    return response as SoldeTiersResponse[];
   }
 
   /**

@@ -91,7 +91,7 @@
                 type="text"
                 required
                 bind:value={loginValue}
-                placeholder={get(authStore) ? getTranslation(get(i18nStore).resources, 'username_placeholder', 'common') : 'Enter your username'}
+                placeholder={getTranslation(get(i18nStore).resources, 'username_placeholder', 'common') || 'Enter your username'}
                 disabled={isLoading}
                 autocomplete="one-time-code"
               />
@@ -107,7 +107,7 @@
                 type="password"
                 required
                 bind:value={passwordValue}
-                placeholder={get(authStore) ? getTranslation(get(i18nStore).resources, 'password_placeholder', 'common') : 'Enter your password'}
+                placeholder={getTranslation(get(i18nStore).resources, 'password_placeholder', 'common') || 'Enter your password'}
                 disabled={isLoading}
                 autocomplete="one-time-code"
               />

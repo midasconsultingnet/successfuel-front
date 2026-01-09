@@ -16,6 +16,9 @@ export interface TankInitialStock {
     };
   };
   hauteur_jauge_initiale: number;
+  cout_moyen: number;
+  prix_vente: number;
+  seuil_stock_min: number;
   volume_initial_calcule: number;
   date_initialisation: string;
   utilisateur_id: string;
@@ -25,11 +28,19 @@ export interface TankInitialStock {
 }
 
 export interface CreateTankInitialStockRequest {
+  cuve_id: string;
   hauteur_jauge_initiale: number;
+  cout_moyen: number;
+  prix_vente: number;
+  seuil_stock_min: number;
 }
 
 export interface UpdateTankInitialStockRequest {
+  cuve_id: string;
   hauteur_jauge_initiale: number;
+  cout_moyen: number;
+  prix_vente: number;
+  seuil_stock_min: number;
 }
 
 // Service pour gérer les états initiaux des cuves

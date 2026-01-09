@@ -296,10 +296,9 @@
     }
 
     // Compter les sous-étapes complétées (excluant le champ 'overall')
-    const details = { ...step.details };
-    delete details.overall; // Exclure le champ 'overall' du calcul
+    const { overall, ...filteredDetails } = step.details;
 
-    const entries = Object.entries(details);
+    const entries = Object.entries(filteredDetails);
     const total = entries.length;
     const completed = entries.filter(([_, value]) => value === true).length;
     const percentage = total > 0 ? (completed / total) * 100 : 0;

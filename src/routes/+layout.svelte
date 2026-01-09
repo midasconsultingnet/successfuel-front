@@ -8,12 +8,6 @@
 
   // Props
   let { children } = $props();
-
-  // Définir les variables réactives pour le chemin
-  $effect(() => {
-    // Vérifier l'état d'authentification au montage
-    authStore.checkAuth();
-  });
 </script>
 
 <!-- Déterminer dynamiquement quel layout utiliser -->
