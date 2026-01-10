@@ -32,31 +32,63 @@ class AuthManager {
 
   constructor() {
     this.store = writable<AuthState>(initialAuthState);
-    
+
     // Charger l'état initial depuis le localStorage
     this.loadInitialState();
+
+    // Démarrer la vérification proactive de l'expiration du token
+    this.startTokenExpiryCheck();
   }
 
   private loadInitialState() {
     const token = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
     const expiryStr = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
-    
+
     if (token && expiryStr) {
       const expiry = parseInt(expiryStr);
-      const isValid = Date.now() < expiry;
-      
-      if (isValid) {
-        // Token toujours valide, mais on ne sait pas si l'utilisateur est réellement authentifié
-        // On considère qu'il est authentifié jusqu'à ce qu'une requête échoue
-        this.updateState({ 
-          isAuthenticated: true, 
-          user: null, 
+
+      // Vérifier si le token est proche de l'expiration (selon le seuil de refresh)
+      const refreshThreshold = AUTH_CONFIG.REFRESH_THRESHOLD_MINUTES * 60 * 1000;
+      const isCloseToExpiry = Date.now() >= expiry - refreshThreshold;
+
+      if (isCloseToExpiry) {
+        // Le token est proche de l'expiration, tenter de le rafraîchir
+        this.refreshToken()
+          .then(() => {
+            // Refresh réussi, l'utilisateur est authentifié
+            this.updateState({
+              isAuthenticated: true,
+              user: null,
+              isLoading: false,
+              error: null
+            });
+          })
+          .catch(() => {
+            // Le refresh a échoué, l'utilisateur n'est pas authentifié
+            this.updateState({
+              isAuthenticated: false,
+              user: null,
+              isLoading: false,
+              error: 'Session expirée'
+            });
+          });
+      } else if (Date.now() < expiry) {
+        // Token toujours valide, l'utilisateur est considéré comme authentifié
+        this.updateState({
+          isAuthenticated: true,
+          user: null,
           isLoading: false,
           error: null
         });
       } else {
-        // Token expiré, nettoyer le localStorage
+        // Token expiré et trop tard pour refresh, nettoyer
         this.clearTokens();
+        this.updateState({
+          isAuthenticated: false,
+          user: null,
+          isLoading: false,
+          error: 'Session expirée'
+        });
       }
     }
   }
@@ -156,6 +188,35 @@ class AuthManager {
     }
   }
 
+  public async isAuthenticatedAsync(): Promise<boolean> {
+    const token = this.getToken();
+    if (!token) {
+      return false;
+    }
+
+    // Vérifier si le token est proche de l'expiration et tenter un refresh si nécessaire
+    const expiryStr = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
+    if (expiryStr) {
+      const expiry = parseInt(expiryStr);
+      const refreshThreshold = AUTH_CONFIG.REFRESH_THRESHOLD_MINUTES * 60 * 1000;
+
+      if (Date.now() >= expiry - refreshThreshold) {
+        // Le token est proche de l'expiration, tenter de le rafraîchir
+        try {
+          await this.refreshToken();
+          return true; // Refresh réussi
+        } catch (error) {
+          // Si le refresh échoue, l'utilisateur n'est plus authentifié
+          return false;
+        }
+      }
+    }
+
+    // Vérifier si le token n'est pas encore expiré
+    return Date.now() < parseInt(expiryStr || '0');
+  }
+
+  // Garder la méthode originale pour la compatibilité, mais elle ne fait plus de refresh automatique
   public isAuthenticated(): boolean {
     // Dans l'application Tauri, on délègue au service Tauri
     return tauriAuthService.isAuthenticated();
@@ -170,11 +231,11 @@ class AuthManager {
     }
 
     this.isRefreshing = true;
-    
+
     try {
       // Dans l'application Tauri, on délègue au service Tauri
       const token = await tauriAuthService.refreshToken();
-      
+
       // Mettre à jour le localStorage avec le nouveau token
       const expiry = new Date();
       expiry.setMinutes(expiry.getMinutes() + AUTH_CONFIG.DEFAULT_TOKEN_LIFETIME_MINUTES);
@@ -193,11 +254,23 @@ class AuthManager {
       // Vérifier si l'erreur est liée à une session expirée (HTTP 401)
       if (error.message && typeof error.message === 'string' && error.message.includes('HTTP_401')) {
         // Le refresh a échoué avec un 401, ce qui signifie que la session est expirée
+        // Libérer les requêtes en attente avec une erreur
+        while (this.refreshQueue.length > 0) {
+          const resolve = this.refreshQueue.shift();
+          if (resolve) resolve(null); // Résoudre avec null pour indiquer l'échec
+        }
+
         this.handleSessionExpired();
         throw new Error('Session expirée');
       }
-      
+
       // En cas d'autre erreur de refresh, on déconnecte l'utilisateur
+      // Libérer les requêtes en attente avec une erreur
+      while (this.refreshQueue.length > 0) {
+        const resolve = this.refreshQueue.shift();
+        if (resolve) resolve(null); // Résoudre avec null pour indiquer l'échec
+      }
+
       this.handleSessionExpired();
       throw error;
     } finally {
@@ -226,6 +299,28 @@ class AuthManager {
     localStorage.removeItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
   }
 
+  private startTokenExpiryCheck() {
+    // Vérifier périodiquement si le token est proche de l'expiration
+    setInterval(() => {
+      const token = this.getToken();
+      if (token) {
+        const expiryStr = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
+        if (expiryStr) {
+          const expiry = parseInt(expiryStr);
+          const refreshThreshold = AUTH_CONFIG.REFRESH_THRESHOLD_MINUTES * 60 * 1000;
+
+          if (Date.now() >= expiry - refreshThreshold) {
+            // Le token est proche de l'expiration, tenter de le rafraîchir
+            this.refreshToken().catch(() => {
+              // Si le refresh échoue, l'utilisateur sera déconnecté
+              // via le callback onSessionExpired configuré dans authStore
+            });
+          }
+        }
+      }
+    }, 60000); // Vérifier toutes les minutes
+  }
+
   public getToken(): string | null {
     const token = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
     const expiryStr = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
@@ -247,7 +342,8 @@ class AuthManager {
     requestFn: () => Promise<T>
   ): Promise<T> {
     // Vérifier si l'utilisateur est authentifié
-    if (!this.isAuthenticated()) {
+    const authenticated = await this.isAuthenticatedAsync();
+    if (!authenticated) {
       throw this.createUnauthorizedError();
     }
 
@@ -272,7 +368,10 @@ class AuthManager {
       if (error.status === 401 || (error.response && error.response.status === 401)) {
         try {
           await this.refreshToken();
-          return await requestFn(); // Réessayer la requête
+          // Réexécuter la fonction de requête originale avec les nouveaux headers
+          // La fonction requestFn devrait maintenant utiliser les nouveaux headers
+          // car ils ont été mis à jour dans ApiService via apiService.setAuthToken
+          return await requestFn();
         } catch (refreshError: any) {
           // Si le refresh échoue, l'utilisateur est déconnecté
           throw this.createUnauthorizedError();
