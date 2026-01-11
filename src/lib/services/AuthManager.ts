@@ -7,6 +7,7 @@ export interface AuthState {
   isAuthenticated: boolean;
   user: any | null;
   isLoading: boolean;
+  isInitializing: boolean; // Indicateur de chargement initial
   error: string | null;
 }
 
@@ -15,6 +16,7 @@ const initialAuthState: AuthState = {
   isAuthenticated: false,
   user: null,
   isLoading: false,
+  isInitializing: true, // Par défaut, on est en train d'initialiser
   error: null
 };
 
@@ -40,57 +42,16 @@ class AuthManager {
     this.startTokenExpiryCheck();
   }
 
-  private loadInitialState() {
-    const token = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
-    const expiryStr = localStorage.getItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
-
-    if (token && expiryStr) {
-      const expiry = parseInt(expiryStr);
-
-      // Vérifier si le token est proche de l'expiration (selon le seuil de refresh)
-      const refreshThreshold = AUTH_CONFIG.REFRESH_THRESHOLD_MINUTES * 60 * 1000;
-      const isCloseToExpiry = Date.now() >= expiry - refreshThreshold;
-
-      if (isCloseToExpiry) {
-        // Le token est proche de l'expiration, tenter de le rafraîchir
-        this.refreshToken()
-          .then(() => {
-            // Refresh réussi, l'utilisateur est authentifié
-            this.updateState({
-              isAuthenticated: true,
-              user: null,
-              isLoading: false,
-              error: null
-            });
-          })
-          .catch(() => {
-            // Le refresh a échoué, l'utilisateur n'est pas authentifié
-            this.updateState({
-              isAuthenticated: false,
-              user: null,
-              isLoading: false,
-              error: 'Session expirée'
-            });
-          });
-      } else if (Date.now() < expiry) {
-        // Token toujours valide, l'utilisateur est considéré comme authentifié
-        this.updateState({
-          isAuthenticated: true,
-          user: null,
-          isLoading: false,
-          error: null
-        });
-      } else {
-        // Token expiré et trop tard pour refresh, nettoyer
-        this.clearTokens();
-        this.updateState({
-          isAuthenticated: false,
-          user: null,
-          isLoading: false,
-          error: 'Session expirée'
-        });
-      }
-    }
+  private async loadInitialState() {
+    // Charger l'état initial sans vérifier la validité du token
+    // Puisque nous effaçons les tokens au démarrage, cette méthode ne fera que terminer l'initialisation
+    this.updateState({
+      isAuthenticated: false,
+      user: null,
+      isLoading: false,
+      isInitializing: false,
+      error: null
+    });
   }
 
   public setCallbacks(callbacks: AuthCallbacks) {
@@ -100,12 +61,12 @@ class AuthManager {
   private updateState(newState: Partial<AuthState>) {
     this.store.update(state => {
       const updatedState = { ...state, ...newState };
-      
+
       // Appeler le callback de changement d'authentification
       if (this.callbacks.onAuthChange) {
         this.callbacks.onAuthChange(updatedState);
       }
-      
+
       return updatedState;
     });
   }
@@ -236,12 +197,8 @@ class AuthManager {
       // Dans l'application Tauri, on délègue au service Tauri
       const token = await tauriAuthService.refreshToken();
 
-      // Mettre à jour le localStorage avec le nouveau token
-      const expiry = new Date();
-      expiry.setMinutes(expiry.getMinutes() + AUTH_CONFIG.DEFAULT_TOKEN_LIFETIME_MINUTES);
-
-      localStorage.setItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN, token);
-      localStorage.setItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY, expiry.getTime().toString());
+      // La mise à jour du token et des headers est gérée par tauriAuthService.refreshToken()
+      // qui appelle apiService.setAuthToken() correctement
 
       // Traiter la file d'attente
       while (this.refreshQueue.length > 0) {
@@ -338,8 +295,17 @@ class AuthManager {
     return token;
   }
 
-  public async handleRequestWithAuth<T>(
-    requestFn: () => Promise<T>
+  // Nous devons stocker les paramètres pour pouvoir recréer la requête
+  // mais pour cela, nous devons modifier la signature de la méthode
+  // ou trouver un moyen de recréer la requête sans créer de boucle infinie
+
+  // Pour résoudre le problème de headers obsolètes, nous allons modifier la méthode
+  // pour qu'elle accepte les paramètres nécessaires à la reconstruction de la requête
+  // mais pour éviter de changer l'interface publique, nous allons créer une méthode privée
+
+  public async handleRequestWithAuthInternal<T>(
+    requestFn: () => Promise<T>,
+    recreateRequest?: () => Promise<T>
   ): Promise<T> {
     // Vérifier si l'utilisateur est authentifié
     const authenticated = await this.isAuthenticatedAsync();
@@ -368,15 +334,48 @@ class AuthManager {
       if (error.status === 401 || (error.response && error.response.status === 401)) {
         try {
           await this.refreshToken();
-          // Réexécuter la fonction de requête originale avec les nouveaux headers
-          // La fonction requestFn devrait maintenant utiliser les nouveaux headers
-          // car ils ont été mis à jour dans ApiService via apiService.setAuthToken
-          return await requestFn();
+          // Si une fonction de recréation de requête est fournie, l'utiliser
+          // sinon réessayer avec la même fonction (mais les headers devraient être mis à jour)
+          if (recreateRequest) {
+            return await recreateRequest();
+          } else {
+            return await requestFn();
+          }
         } catch (refreshError: any) {
           // Si le refresh échoue, l'utilisateur est déconnecté
           throw this.createUnauthorizedError();
         }
       }
+      throw error;
+    }
+  }
+
+  public async handleRequestWithAuth<T>(
+    requestFn: () => Promise<T>
+  ): Promise<T> {
+    // Pour l'instant, on appelle la méthode interne sans fonction de recréation
+    // mais dans ApiService, nous allons passer une fonction de recréation
+    return await this.handleRequestWithAuthInternal(requestFn);
+  }
+
+  private async loadUserProfile(): Promise<void> {
+    try {
+      // Importer dynamiquement userService pour éviter les dépendances circulaires
+      const { userService } = await import('./UserService');
+      const user = await userService.getMe();
+
+      this.updateState({
+        isAuthenticated: true,
+        user,
+        isLoading: false,
+        isInitializing: false, // Terminer l'initialisation
+        error: null
+      });
+    } catch (error) {
+      // Terminer l'initialisation même en cas d'erreur
+      this.updateState({
+        isInitializing: false
+      });
       throw error;
     }
   }

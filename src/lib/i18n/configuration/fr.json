@@ -249,5 +249,14 @@
   "products_saved": "Produits sauvegardés avec succès",
   "save_error": "Erreur lors de la sauvegarde des produits",
   "stock_min_threshold": "Seuil minimum de stock",
-  "stock_min_threshold_placeholder": "Seuil minimum de stock"
+  "stock_min_threshold_placeholder": "Seuil minimum de stock",
+  "dissociate": "Dissocier",
+  "associate_payment_method": "Associer une Méthode",
+  "associate_payment_method_description": "Associez une méthode de paiement existante à une trésorerie",
+  "payment_method_associated": "Méthode de paiement associée avec succès",
+  "payment_method_dissociated": "Méthode de paiement dissociée avec succès",
+  "payment_method_association_error": "Erreur lors de l'association de la méthode de paiement",
+  "payment_method_dissociation_error": "Erreur lors de la dissociation de la méthode de paiement",
+  "select_treasury_first": "Sélectionnez une trésorerie d'abord",
+  "no_unlinked_payment_methods": "Toutes les méthodes de paiement sont déjà associées à cette trésorerie"
 }

@@ -58,6 +58,7 @@
   let showEditTreasuryDialog = $state(false);
   let showAddPaymentMethodDialog = $state(false);
   let showEditPaymentMethodDialog = $state(false);
+  let showAssociatePaymentMethodDialog = $state(false);
 
   // États du formulaire trésorerie
   let treasuryName = $state('');
@@ -515,199 +516,28 @@
     editingTreasuryTypeValue = treasury.type;
     treasuryTypeValue = treasury.type;
     // Convertir les détails bancaires en chaîne JSON pour l'affichage dans la textarea
-    let bankDetailsObj: Record<string, any> = {};
     if (treasury.bank_details) {
+      let bankDetailsObj: Record<string, any> = {};
       if (typeof treasury.bank_details === 'string') {
         // Si c'est une chaîne, on suppose que c'est une chaîne JSON et on la parse
         try {
           bankDetailsObj = JSON.parse(treasury.bank_details);
         } catch (e) {
-          // Si la chaîne n'est pas un JSON valide, on la traite comme un objet vide
-          bankDetailsObj = {};
+          // Si la chaîne n'est pas un JSON valide, on la traite comme une chaîne brute
+          treasuryBankDetails = treasury.bank_details;
+          showEditTreasuryDialog = true;
+          return;
         }
       } else if (typeof treasury.bank_details === 'object' && !Array.isArray(treasury.bank_details)) {
         // Si c'est un objet, on l'utilise directement
         bankDetailsObj = treasury.bank_details;
       }
+      treasuryBankDetails = JSON.stringify(bankDetailsObj, null, 2); // Formatage avec indentation
+    } else {
+      // Si aucun détail bancaire n'est défini, on initialise avec une chaîne vide
+      treasuryBankDetails = '';
     }
-    treasuryBankDetails = JSON.stringify(bankDetailsObj, null, 2); // Formatage avec indentation
     showEditTreasuryDialog = true;
-  }
-
-  // Fonction pour ajouter une méthode de paiement
-  async function addPaymentMethod() {
-    try {
-      if (!paymentMethodName || !paymentMethodTreasuryIdValue) {
-        throw new Error('Le nom et la trésorerie de la méthode de paiement sont requis');
-      }
-
-      // Mettre à jour les propriétés avec les valeurs des selects
-      paymentMethodTreasuryId = paymentMethodTreasuryIdValue;
-      paymentMethodActive = paymentMethodStatus === 'active';
-
-      // Créer l'objet pour l'appel API
-      const createData = {
-        nom: paymentMethodName,
-        type_paiement: paymentMethodType,
-        trésorerie_id: paymentMethodTreasuryIdValue
-      };
-
-      // Créer la méthode de paiement via l'API
-      const newPaymentMethodFromApi = await paymentMethodService.createPaymentMethod(createData);
-
-      // Associer la méthode de paiement à la trésorerie via l'API d'association
-      if (newPaymentMethodFromApi.id && paymentMethodTreasuryIdValue) {
-        await paymentMethodService.associatePaymentMethodToTreasury({
-          tresorerie_id: paymentMethodTreasuryIdValue,
-          methode_paiement_id: newPaymentMethodFromApi.id,
-          actif: true
-        });
-      }
-
-      // Créer l'objet de la nouvelle méthode de paiement pour l'interface
-      const newPaymentMethod: PaymentMethodConfig = {
-        id: newPaymentMethodFromApi.id,
-        name: newPaymentMethodFromApi.nom,
-        treasury_id: paymentMethodTreasuryIdValue,
-        actif: true
-      };
-
-      // Ajouter à la liste
-      paymentMethods = [...paymentMethods, newPaymentMethod];
-
-      // Réinitialiser le formulaire
-      showAddPaymentMethodDialog = false;
-      paymentMethodName = '';
-      paymentMethodTreasuryId = '';
-      paymentMethodTreasuryIdValue = '';
-      paymentMethodActive = true;
-      paymentMethodStatus = 'active';
-
-      console.log('Méthode de paiement ajoutée avec succès:', newPaymentMethod);
-    } catch (err) {
-      console.error('Erreur lors de l\'ajout de la méthode de paiement:', err);
-      error = 'Impossible d\'ajouter la méthode de paiement: ' + (err as Error).message;
-    }
-  }
-
-  // Fonction pour modifier une méthode de paiement
-  async function updatePaymentMethod() {
-    try {
-      if (!editingPaymentMethod || !editingPaymentMethod.id) {
-        throw new Error('Aucune méthode de paiement à éditer');
-      }
-
-      // Mettre à jour la méthode de paiement via l'API
-      const updateData = {
-        nom: editingPaymentMethod.name || '',
-        type_paiement: paymentMethodType || 'autre', // Utiliser le type du formulaire ou 'autre' par défaut
-        trésorerie_id: editingPaymentMethodTreasuryIdValue
-      };
-
-      const updatedPaymentMethodFromApi = await paymentMethodService.updatePaymentMethod(editingPaymentMethod.id, updateData);
-
-      // Mettre à jour la méthode de paiement dans la liste
-      const updatedId = editingPaymentMethod.id;
-      const updatedTreasuryId = editingPaymentMethodTreasuryIdValue;
-      const updatedIsActive = editingPaymentMethodStatus === 'active';
-      const updatedPaymentMethod = {
-        id: updatedPaymentMethodFromApi.id,
-        name: updatedPaymentMethodFromApi.nom,
-        treasury_id: updatedTreasuryId,
-        actif: updatedIsActive
-      };
-
-      paymentMethods = paymentMethods.map(pm =>
-        pm.id === updatedId
-          ? updatedPaymentMethod
-          : pm
-      );
-
-      // Fermer la boîte de dialogue
-      showEditPaymentMethodDialog = false;
-      editingPaymentMethod = null;
-
-      console.log('Méthode de paiement mise à jour avec succès');
-    } catch (err) {
-      console.error('Erreur lors de la mise à jour de la méthode de paiement:', err);
-      error = 'Impossible de mettre à jour la méthode de paiement: ' + (err as Error).message;
-    }
-  }
-
-  // Fonction pour supprimer une méthode de paiement
-  async function removePaymentMethod(paymentMethodId: string) {
-    try {
-      // Supprimer la méthode de paiement via l'API
-      await paymentMethodService.deletePaymentMethod(paymentMethodId);
-
-      // Retirer la méthode de paiement de la liste
-      paymentMethods = paymentMethods.filter(pm => pm.id !== paymentMethodId);
-
-      console.log('Méthode de paiement supprimée avec succès');
-    } catch (err) {
-      console.error('Erreur lors de la suppression de la méthode de paiement:', err);
-      error = 'Impossible de supprimer la méthode de paiement: ' + (err as Error).message;
-    }
-  }
-
-  // Fonction pour préparer l'édition d'une méthode de paiement
-  function prepareEditPaymentMethod(paymentMethod: PaymentMethodConfig) {
-    editingPaymentMethod = { ...paymentMethod };
-    editingPaymentMethodTreasuryIdValue = paymentMethod.treasury_id;
-    editingPaymentMethodStatus = paymentMethod.actif ? 'active' : 'inactive';
-    // Initialiser paymentMethodType avec une valeur par défaut ou vide
-    // Pour l'instant, on suppose que le type n'est pas disponible dans l'objet initial
-    // On pourrait enrichir l'objet PaymentMethodConfig pour inclure le type
-    paymentMethodType = '';
-    showEditPaymentMethodDialog = true;
-  }
-
-  // Fonction pour associer une trésorerie existante à la station
-  async function addExistingTreasury() {
-    try {
-      if (!selectedUnlinkedTreasuryId || !stationId) {
-        throw new Error('Aucune trésorerie sélectionnée ou ID de station manquant');
-      }
-
-      // Associer la trésorerie existante à la station via l'API
-      await treasuryService.associateTreasuryToStation(selectedUnlinkedTreasuryId, stationId);
-
-      // Récupérer la trésorerie associée pour la mettre à jour dans la liste
-      const associatedTreasury = allTreasuries.find(t => t.id === selectedUnlinkedTreasuryId);
-
-      if (associatedTreasury) {
-        // Ajouter la trésorerie à la liste des trésoreries de la station
-        treasuries = [...treasuries, associatedTreasury];
-      }
-
-      // Réinitialiser la sélection
-      selectedUnlinkedTreasuryId = '';
-
-      console.log('Trésorerie existante ajoutée à la station avec succès');
-    } catch (err) {
-      console.error('Erreur lors de l\'ajout de la trésorerie existante:', err);
-      error = 'Impossible d\'ajouter la trésorerie existante: ' + (err as Error).message;
-    }
-  }
-
-  // Fonction pour filtrer les trésoreries non liées à la station
-  function getUnlinkedTreasuries(): TreasuryConfig[] {
-    const linkedTreasuryIds = new Set(treasuries.map(t => t.id).filter(Boolean));
-    return allTreasuries.filter(t => !linkedTreasuryIds.has(t.id || ''));
-  }
-
-  // Fonction pour filtrer les méthodes de paiement non liées à une trésorerie spécifique
-  function getUnlinkedPaymentMethodsForTreasury(treasuryId: string): PaymentMethodConfig[] {
-    // Récupérer les méthodes de paiement déjà liées à cette trésorerie
-    const linkedPaymentMethodIds = new Set(
-      paymentMethods
-        .filter(pm => pm.treasury_id === treasuryId)
-        .map(pm => pm.id)
-        .filter(Boolean) // Filtrer les IDs nuls ou undefined
-    );
-
-    // Retourner les méthodes de paiement non liées à cette trésorerie
-    return allPaymentMethods.filter(pm => !linkedPaymentMethodIds.has(pm.id || ''));
   }
 
   // Fonction pour associer une méthode de paiement existante à une trésorerie
@@ -756,6 +586,78 @@
       error = 'Impossible d\'associer la méthode de paiement: ' + (err as Error).message;
       toast.error(get(i18nStore).resources?.configuration?.payment_method_association_error || 'Erreur lors de l\'association de la méthode de paiement');
     }
+  }
+
+
+  // Fonction pour dissocier une méthode de paiement d'une trésorerie
+  async function dissociatePaymentMethod(paymentMethodId: string, treasuryId: string) {
+    try {
+      // Dissocier la méthode de paiement de la trésorerie via l'API
+      await paymentMethodService.dissociatePaymentMethodFromTreasury({
+        tresorerie_id: treasuryId,
+        methode_paiement_id: paymentMethodId,
+        actif: false
+      });
+
+      // Retirer la méthode de paiement de la liste
+      paymentMethods = paymentMethods.filter(pm => !(pm.id === paymentMethodId && pm.treasury_id === treasuryId));
+
+      console.log('Méthode de paiement dissociée avec succès');
+      toast.success(get(i18nStore).resources?.configuration?.payment_method_dissociated || 'Méthode de paiement dissociée avec succès');
+    } catch (err) {
+      console.error('Erreur lors de la dissociation de la méthode de paiement:', err);
+      error = 'Impossible de dissocier la méthode de paiement: ' + (err as Error).message;
+      toast.error(get(i18nStore).resources?.configuration?.payment_method_dissociation_error || 'Erreur lors de la dissociation de la méthode de paiement');
+    }
+  }
+
+
+  // Fonction pour associer une trésorerie existante à la station
+  async function addExistingTreasury() {
+    try {
+      if (!selectedUnlinkedTreasuryId || !stationId) {
+        throw new Error('Aucune trésorerie sélectionnée ou ID de station manquant');
+      }
+
+      // Associer la trésorerie existante à la station via l'API
+      await treasuryService.associateTreasuryToStation(selectedUnlinkedTreasuryId, stationId);
+
+      // Récupérer la trésorerie associée pour la mettre à jour dans la liste
+      const associatedTreasury = allTreasuries.find(t => t.id === selectedUnlinkedTreasuryId);
+
+      if (associatedTreasury) {
+        // Ajouter la trésorerie à la liste des trésoreries de la station
+        treasuries = [...treasuries, associatedTreasury];
+      }
+
+      // Réinitialiser la sélection
+      selectedUnlinkedTreasuryId = '';
+
+      console.log('Trésorerie existante ajoutée à la station avec succès');
+    } catch (err) {
+      console.error('Erreur lors de l\'ajout de la trésorerie existante:', err);
+      error = 'Impossible d\'ajouter la trésorerie existante: ' + (err as Error).message;
+    }
+  }
+
+  // Fonction pour filtrer les trésoreries non liées à la station
+  function getUnlinkedTreasuries(): TreasuryConfig[] {
+    const linkedTreasuryIds = new Set(treasuries.map(t => t.id).filter(Boolean));
+    return allTreasuries.filter(t => !linkedTreasuryIds.has(t.id || ''));
+  }
+
+  // Fonction pour filtrer les méthodes de paiement non liées à une trésorerie spécifique
+  function getUnlinkedPaymentMethodsForTreasury(treasuryId: string): PaymentMethodConfig[] {
+    // Récupérer les méthodes de paiement déjà liées à cette trésorerie
+    const linkedPaymentMethodIds = new Set(
+      paymentMethods
+        .filter(pm => pm.treasury_id === treasuryId)
+        .map(pm => pm.id)
+        .filter(Boolean) // Filtrer les IDs nuls ou undefined
+    );
+
+    // Retourner les méthodes de paiement non liées à cette trésorerie
+    return allPaymentMethods.filter(pm => !linkedPaymentMethodIds.has(pm.id || ''));
   }
 
   // Fonction pour grouper les méthodes de paiement par trésorerie
@@ -988,15 +890,12 @@
       </CardHeader>
       <CardContent>
         <Tabs bind:value={activeTab} class="w-full">
-          <TabsList class="grid w-full grid-cols-3">
+          <TabsList class="grid w-full grid-cols-2">
             <TabsTrigger value="treasuries">
               <Translate key="treasuries" module="configuration" fallback="Trésoreries" />
             </TabsTrigger>
             <TabsTrigger value="payment_methods">
               <Translate key="payment_methods" module="configuration" fallback="Méthodes de Paiement" />
-            </TabsTrigger>
-            <TabsTrigger value="associate-payment-method">
-              <Translate key="associate_payment_method" module="configuration" fallback="Associer une Méthode" />
             </TabsTrigger>
           </TabsList>
 
@@ -1269,125 +1168,107 @@
                       />
                     </CardDescription>
                   </div>
-                  <Dialog bind:open={showAddPaymentMethodDialog}>
+                  <Dialog bind:open={showAssociatePaymentMethodDialog}>
                     <DialogTrigger>
                       <Button>
-                        <Translate key="add_payment_method" module="configuration" fallback="Ajouter une Méthode" />
+                        <Translate key="associate_payment_method" module="configuration" fallback="Associer une Méthode" />
                       </Button>
                     </DialogTrigger>
-                    <DialogContent class="sm:max-w-md">
+                    <DialogContent class="sm:max-w-lg max-h-[90vh] overflow-y-auto">
                       <DialogHeader>
                         <DialogTitle>
-                          <Translate key="add_payment_method" module="configuration" fallback="Ajouter une Méthode" />
+                          <Translate key="associate_payment_method" module="configuration" fallback="Associer une Méthode" />
                         </DialogTitle>
                         <DialogDescription>
                           <Translate
-                            key="add_payment_method_description"
+                            key="associate_payment_method_description"
                             module="configuration"
-                            fallback="Entrez les informations de la nouvelle méthode de paiement"
+                            fallback="Associez une méthode de paiement existante à une trésorerie"
                           />
                         </DialogDescription>
                       </DialogHeader>
-                      <div class="space-y-4 py-4">
-                        <div class="space-y-2">
-                          <Label for="paymentMethodName">
-                            <Translate key="name" module="common" fallback="Nom" />
-                          </Label>
-                          <Input
-                            id="paymentMethodName"
-                            bind:value={paymentMethodName}
-                            autocomplete="one-time-code"
-                            placeholder={get(i18nStore).resources?.configuration?.payment_method_name || 'Nom de la méthode de paiement'}
-                          />
-                        </div>
-
-                        <div class="space-y-2">
-                          <Label for="paymentMethodType">
-                            <Translate key="payment_method_type" module="configuration" fallback="Type de méthode de paiement" />
-                          </Label>
-                          <Input
-                            id="paymentMethodType"
-                            bind:value={paymentMethodType}
-                            autocomplete="one-time-code"
-                            placeholder={get(i18nStore).resources?.configuration?.payment_method_type_placeholder || 'Type de paiement (ex: Carte Carburant, Carte Bancaire)'}
-                          />
-                        </div>
-
-                        <div class="space-y-2">
-                          <Label for="paymentMethodTreasuryId">
-                            <Translate key="treasury" module="configuration" fallback="Trésorerie" />
-                          </Label>
-                          <Select.Root type="single" bind:value={paymentMethodTreasuryIdValue}>
-                            <Select.Trigger id="paymentMethodTreasuryId">
-                              <span data-slot="select-value">
-                                {treasuries.length > 0
-                                  ? (paymentMethodTreasuryIdValue && paymentMethodTreasuryIdValue !== ''
-                                    ? treasuries.find(t => t.id && t.id === paymentMethodTreasuryIdValue)?.name || 'Trésorerie inconnue'
-                                    : get(i18nStore).resources?.configuration?.select_treasury || 'Sélectionnez une trésorerie')
-                                  : get(i18nStore).resources?.configuration?.loading_treasuries || 'Chargement...'}
-                              </span>
-                            </Select.Trigger>
-                            <Select.Content>
-                              {#if treasuries.length > 0}
+                      <div class="space-y-6 py-4">
+                        <div class="grid grid-cols-1 gap-6">
+                          <!-- Sélection de la trésorerie -->
+                          <div class="space-y-3">
+                            <Label for="treasury-select-associate" class="text-sm font-medium">
+                              <Translate key="treasury" module="configuration" fallback="Trésorerie" />
+                            </Label>
+                            <Select.Root type="single" bind:value={selectedTreasuryForAssociation}>
+                              <Select.Trigger id="treasury-select-associate" class="w-full">
+                                <span data-slot="select-value" class="truncate">
+                                  {selectedTreasuryForAssociation
+                                    ? treasuries.find(t => t.id === selectedTreasuryForAssociation)?.name || 'Trésorerie inconnue'
+                                    : (get(i18nStore).resources?.configuration?.select_treasury || 'Sélectionnez une trésorerie')}
+                                </span>
+                              </Select.Trigger>
+                              <Select.Content>
                                 {#each treasuries as treasury (treasury.id)}
-                                  {#if treasury.id && treasury.id !== ''}
-                                    <Select.Item value={treasury.id}>
-                                      {treasury.name} ({get(i18nStore).resources?.configuration?.[`treasury_type_${treasury.type}`] || treasury.type})
-                                    </Select.Item>
-                                  {/if}
+                                  <Select.Item value={treasury.id || ''}>
+                                    {treasury.name}
+                                  </Select.Item>
                                 {/each}
-                              {:else}
-                                <Select.Item value="" disabled={true}>
-                                  {get(i18nStore).resources?.configuration?.no_treasuries_available || 'Aucune trésorerie disponible'}
-                                </Select.Item>
-                              {/if}
-                            </Select.Content>
-                          </Select.Root>
-                        </div>
+                              </Select.Content>
+                            </Select.Root>
+                          </div>
 
-                        <div class="space-y-2">
-                          <Label for="paymentMethodActive">
-                            <Translate key="status" module="common" fallback="Statut" />
-                          </Label>
-                          <Select.Root type="single" bind:value={paymentMethodStatus}>
-                            <Select.Trigger>
-                              <span data-slot="select-value">
-                                {paymentMethodStatus === 'active'
-                                  ? get(i18nStore).resources?.configuration?.active || 'Actif'
-                                  : get(i18nStore).resources?.configuration?.inactive || 'Inactif'}
-                              </span>
-                            </Select.Trigger>
-                            <Select.Content>
-                              <Select.Item value="active">
-                                <Translate key="active" module="configuration" fallback="Actif" />
-                              </Select.Item>
-                              <Select.Item value="inactive">
-                                <Translate key="inactive" module="configuration" fallback="Inactif" />
-                              </Select.Item>
-                            </Select.Content>
-                          </Select.Root>
+                          <!-- Sélection de la méthode de paiement -->
+                          <div class="space-y-3">
+                            <Label for="payment-method-select-associate" class="text-sm font-medium">
+                              <Translate key="payment_method" module="configuration" fallback="Méthode de Paiement" />
+                            </Label>
+                            <Select.Root
+                              type="single"
+                              bind:value={selectedPaymentMethodForAssociation}
+                              disabled={!selectedTreasuryForAssociation}
+                            >
+                              <Select.Trigger id="payment-method-select-associate" class="w-full">
+                                <span data-slot="select-value" class="truncate">
+                                  {selectedPaymentMethodForAssociation
+                                    ? allPaymentMethods.find(pm => pm.id === selectedPaymentMethodForAssociation)?.name || 'Méthode inconnue'
+                                    : (get(i18nStore).resources?.configuration?.select_payment_method || 'Sélectionnez une méthode')}
+                                </span>
+                              </Select.Trigger>
+                              <Select.Content>
+                                {#if selectedTreasuryForAssociation}
+                                  {#each getUnlinkedPaymentMethodsForTreasury(selectedTreasuryForAssociation) as paymentMethod (paymentMethod.id)}
+                                    <Select.Item value={paymentMethod.id || ''}>
+                                      {paymentMethod.name}
+                                    </Select.Item>
+                                  {/each}
+                                {:else}
+                                  <Select.Item value="" disabled={true}>
+                                    <Translate key="select_treasury_first" module="configuration" fallback="Sélectionnez une trésorerie d'abord" />
+                                  </Select.Item>
+                                {/if}
+                              </Select.Content>
+                            </Select.Root>
+
+                            {#if selectedTreasuryForAssociation && getUnlinkedPaymentMethodsForTreasury(selectedTreasuryForAssociation).length === 0}
+                              <p class="text-sm text-muted-foreground mt-2">
+                                <Translate key="no_unlinked_payment_methods" module="configuration" fallback="Toutes les méthodes de paiement sont déjà associées à cette trésorerie" />
+                              </p>
+                            {/if}
+                          </div>
                         </div>
                       </div>
 
-                      <div class="flex justify-end space-x-2">
+                      <div class="flex justify-end space-x-3 pt-4 border-t">
                         <Button
                           variant="outline"
                           onclick={() => {
-                            showAddPaymentMethodDialog = false;
-                            paymentMethodName = '';
-                            paymentMethodType = '';
-                            paymentMethodTreasuryId = '';
-                            paymentMethodActive = true;
-                            paymentMethodStatus = 'active';
+                            showAssociatePaymentMethodDialog = false;
+                            selectedTreasuryForAssociation = '';
+                            selectedPaymentMethodForAssociation = '';
                           }}
                         >
                           <Translate key="cancel" module="common" fallback="Annuler" />
                         </Button>
                         <Button
-                          onclick={addPaymentMethod}
-                          disabled={!paymentMethodName || !paymentMethodTreasuryIdValue}
+                          onclick={addExistingPaymentMethodToTreasury}
+                          disabled={!selectedTreasuryForAssociation || !selectedPaymentMethodForAssociation}
                         >
-                          <Translate key="add" module="common" fallback="Ajouter" />
+                          <Translate key="associate" module="configuration" fallback="Associer" />
                         </Button>
                       </div>
                     </DialogContent>
@@ -1430,17 +1311,10 @@
                                   <Button
                                     variant="outline"
                                     size="sm"
-                                    onclick={() => prepareEditPaymentMethod(method)}
-                                  >
-                                    <Translate key="edit" module="common" fallback="Éditer" />
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
                                     class="text-destructive border-destructive"
-                                    onclick={() => removePaymentMethod(method.id!)}
+                                    onclick={() => dissociatePaymentMethod(method.id!, method.treasury_id)}
                                   >
-                                    <Translate key="delete" module="common" fallback="Supprimer" />
+                                    <Translate key="dissociate" module="configuration" fallback="Dissocier" />
                                   </Button>
                                 </div>
                               </div>
@@ -1460,89 +1334,6 @@
             </Card>
           </TabsContent>
 
-          <!-- Onglet Associer une Méthode de Paiement -->
-          <TabsContent value="associate-payment-method" class="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <Translate key="associate_payment_method" module="configuration" fallback="Associer une Méthode de Paiement" />
-                </CardTitle>
-                <CardDescription>
-                  <Translate
-                    key="associate_payment_method_description"
-                    module="configuration"
-                    fallback="Associez une méthode de paiement existante à une trésorerie"
-                  />
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div class="space-y-4">
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Sélection de la trésorerie -->
-                    <div class="space-y-2">
-                      <Label for="treasury-select">
-                        <Translate key="treasury" module="configuration" fallback="Trésorerie" />
-                      </Label>
-                      <Select.Root type="single" bind:value={selectedTreasuryForAssociation}>
-                        <Select.Trigger id="treasury-select">
-                          <span data-slot="select-value">
-                            {selectedTreasuryForAssociation
-                              ? treasuries.find(t => t.id === selectedTreasuryForAssociation)?.name || 'Trésorerie inconnue'
-                              : (get(i18nStore).resources?.configuration?.select_treasury || 'Sélectionnez une trésorerie')}
-                          </span>
-                        </Select.Trigger>
-                        <Select.Content>
-                          {#each treasuries as treasury (treasury.id)}
-                            <Select.Item value={treasury.id || ''}>
-                              {treasury.name}
-                            </Select.Item>
-                          {/each}
-                        </Select.Content>
-                      </Select.Root>
-                    </div>
-
-                    <!-- Sélection de la méthode de paiement -->
-                    <div class="space-y-2">
-                      <Label for="payment-method-select">
-                        <Translate key="payment_method" module="configuration" fallback="Méthode de Paiement" />
-                      </Label>
-                      <Select.Root
-                        type="single"
-                        bind:value={selectedPaymentMethodForAssociation}
-                        disabled={!selectedTreasuryForAssociation}
-                      >
-                        <Select.Trigger id="payment-method-select">
-                          <span data-slot="select-value">
-                            {selectedPaymentMethodForAssociation
-                              ? allPaymentMethods.find(pm => pm.id === selectedPaymentMethodForAssociation)?.name || 'Méthode inconnue'
-                              : (get(i18nStore).resources?.configuration?.select_payment_method || 'Sélectionnez une méthode')}
-                          </span>
-                        </Select.Trigger>
-                        <Select.Content>
-                          {#if selectedTreasuryForAssociation}
-                            {#each getUnlinkedPaymentMethodsForTreasury(selectedTreasuryForAssociation) as paymentMethod (paymentMethod.id)}
-                              <Select.Item value={paymentMethod.id || ''}>
-                                {paymentMethod.name}
-                              </Select.Item>
-                            {/each}
-                          {/if}
-                        </Select.Content>
-                      </Select.Root>
-                    </div>
-                  </div>
-
-                  <div class="flex justify-end">
-                    <Button
-                      onclick={addExistingPaymentMethodToTreasury}
-                      disabled={!selectedTreasuryForAssociation || !selectedPaymentMethodForAssociation}
-                    >
-                      <Translate key="associate" module="configuration" fallback="Associer" />
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
       </CardContent>
     </Card>
@@ -1669,121 +1460,6 @@
     {/if}
 
     <!-- Dialogue d'édition de méthode de paiement -->
-    {#if editingPaymentMethod}
-      <Dialog bind:open={showEditPaymentMethodDialog}>
-        <DialogContent class="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              <Translate key="edit_payment_method" module="configuration" fallback="Éditer la Méthode" />
-            </DialogTitle>
-            <DialogDescription>
-              <Translate
-                key="edit_payment_method_description"
-                module="configuration"
-                fallback="Modifiez les informations de la méthode de paiement"
-              />
-            </DialogDescription>
-          </DialogHeader>
-          <div class="space-y-4 py-4">
-            <div class="space-y-2">
-              <Label for="editPaymentMethodName">
-                <Translate key="name" module="common" fallback="Nom" />
-              </Label>
-              <Input
-                id="editPaymentMethodName"
-                bind:value={editingPaymentMethod.name}
-                autocomplete="one-time-code"
-                placeholder={get(i18nStore).resources?.configuration?.payment_method_name || 'Nom de la méthode de paiement'}
-              />
-            </div>
-
-            <div class="space-y-2">
-              <Label for="editPaymentMethodType">
-                <Translate key="payment_method_type" module="configuration" fallback="Type de méthode de paiement" />
-              </Label>
-              <Input
-                id="editPaymentMethodType"
-                bind:value={paymentMethodType}
-                autocomplete="one-time-code"
-                placeholder={get(i18nStore).resources?.configuration?.payment_method_type_placeholder || 'Type de paiement (ex: Carte Carburant, Carte Bancaire)'}
-              />
-            </div>
-
-            <div class="space-y-2">
-              <Label for="editPaymentMethodTreasuryId">
-                <Translate key="treasury" module="configuration" fallback="Trésorerie" />
-              </Label>
-              <Select.Root type="single" bind:value={editingPaymentMethodTreasuryIdValue}>
-                <Select.Trigger id="editPaymentMethodTreasuryId">
-                  <span data-slot="select-value">
-                    {treasuries.length > 0
-                      ? (editingPaymentMethodTreasuryIdValue
-                        ? getTreasuryById(editingPaymentMethodTreasuryIdValue)?.name || 'Trésorerie inconnue'
-                        : get(i18nStore).resources?.configuration?.select_treasury || 'Sélectionnez une trésorerie')
-                      : get(i18nStore).resources?.configuration?.loading_treasuries || 'Chargement...'}
-                  </span>
-                </Select.Trigger>
-                <Select.Content>
-                  {#if treasuries.length > 0}
-                    {#each treasuries as treasury}
-                      <Select.Item value={treasury.id || ''}>
-                        {treasury.name} ({get(i18nStore).resources?.configuration?.[`treasury_type_${treasury.type}`] || treasury.type})
-                      </Select.Item>
-                    {/each}
-                  {:else}
-                    <Select.Item value="" disabled={true}>
-                      {get(i18nStore).resources?.configuration?.no_treasuries_available || 'Aucune trésorerie disponible'}
-                    </Select.Item>
-                  {/if}
-                </Select.Content>
-              </Select.Root>
-            </div>
-
-            <div class="space-y-2">
-              <Label for="editPaymentMethodActive">
-                <Translate key="status" module="common" fallback="Statut" />
-              </Label>
-              <Select.Root type="single" bind:value={editingPaymentMethodStatus}>
-                <Select.Trigger>
-                  <span data-slot="select-value">
-                    {editingPaymentMethodStatus === 'active'
-                      ? get(i18nStore).resources?.configuration?.active || 'Actif'
-                      : get(i18nStore).resources?.configuration?.inactive || 'Inactif'}
-                  </span>
-                </Select.Trigger>
-                <Select.Content>
-                  <Select.Item value="active">
-                    <Translate key="active" module="configuration" fallback="Actif" />
-                  </Select.Item>
-                  <Select.Item value="inactive">
-                    <Translate key="inactive" module="configuration" fallback="Inactif" />
-                  </Select.Item>
-                </Select.Content>
-              </Select.Root>
-            </div>
-          </div>
-
-          <div class="flex justify-end space-x-2">
-            <Button
-              variant="outline"
-              onclick={() => {
-                showEditPaymentMethodDialog = false;
-                editingPaymentMethod = null;
-                editingPaymentMethodStatus = 'active';
-              }}
-            >
-              <Translate key="cancel" module="common" fallback="Annuler" />
-            </Button>
-            <Button
-              onclick={updatePaymentMethod}
-              disabled={!editingPaymentMethod?.name || !editingPaymentMethod?.treasury_id}
-            >
-              <Translate key="save" module="common" fallback="Sauvegarder" />
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    {/if}
 
     <!-- Dialogue de validation de la configuration -->
     {#if showValidationDialog && validationResults}

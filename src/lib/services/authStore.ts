@@ -9,6 +9,7 @@ export interface AuthStore {
   isAuthenticated: boolean;
   user: any | null;
   isLoading: boolean;
+  isInitializing: boolean;
   error: string | null;
 }
 
@@ -18,6 +19,7 @@ const createAuthStore = () => {
     isAuthenticated: false,
     user: null,
     isLoading: false,
+    isInitializing: true, // Par défaut, on est en train d'initialiser
     error: null
   });
 
@@ -27,6 +29,7 @@ const createAuthStore = () => {
       isAuthenticated: managerState.isAuthenticated,
       user: managerState.user,
       isLoading: managerState.isLoading,
+      isInitializing: managerState.isInitializing,
       error: managerState.error
     });
   });

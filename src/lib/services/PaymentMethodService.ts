@@ -145,6 +145,25 @@ class PaymentMethodService {
     }
   }
 
+  /**
+   * Dissocier une méthode de paiement d'une trésorerie
+   */
+  async dissociatePaymentMethodFromTreasury(data: {
+    tresorerie_id: string;
+    methode_paiement_id: string;
+    actif: boolean
+  }): Promise<void> {
+    try {
+      await apiService.post(
+        `${this.basePath}/dissocier/`,
+        data
+      );
+    } catch (error) {
+      console.error('Erreur lors de la dissociation de la méthode de paiement de la trésorerie:', error);
+      throw error;
+    }
+  }
+
 }
 
 export const paymentMethodService = new PaymentMethodService();

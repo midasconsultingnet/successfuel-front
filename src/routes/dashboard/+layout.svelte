@@ -11,20 +11,24 @@
 
   let isAuthenticated = $state(false);
   let isLoading = $state(true);
+  let isInitializing = $state(true);
 
   // Vérifier l'état d'authentification au montage
   onMount(() => {
     const unsubscribe = authStore.subscribe((state) => {
-      if (!state.isAuthenticated && !state.isLoading) {
+      // Mettre à jour l'état local
+      isAuthenticated = state.isAuthenticated;
+      isLoading = state.isLoading;
+      isInitializing = state.isInitializing;
+
+      // Rediriger vers la page de login seulement si l'initialisation est terminée
+      // et que l'utilisateur n'est pas authentifié
+      if (!state.isInitializing && !state.isAuthenticated && !state.isLoading) {
         // Rediriger vers la page de login avec redirection vers la page actuelle
         const currentPath = get(page).url.pathname;
         goto(`/login?redirectTo=${encodeURIComponent(currentPath)}`);
         return;
       }
-
-      // Mettre à jour l'état local
-      isAuthenticated = state.isAuthenticated;
-      isLoading = state.isLoading;
     });
 
     // Nettoyer l'abonnement lors du démontage
@@ -37,7 +41,11 @@
 
 <I18nProvider>
   <SessionExpiredHandler>
-    {#if isLoading}
+    {#if isInitializing}
+      <div class="flex justify-center items-center h-screen">
+        <p>Initialisation...</p>
+      </div>
+    {:else if isLoading}
       <div class="flex justify-center items-center h-screen">
         <p>Chargement...</p>
       </div>

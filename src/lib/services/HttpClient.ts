@@ -51,6 +51,7 @@ export class HttpClient {
    * Méthode GET
    */
   async get<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
+    console.log('Requête GET envoyée avec headers:', { ...this.defaultHeaders, ...config.headers });
     const url = this.buildUrl(endpoint, config.params);
     const actualFetch = customFetch || fetch;
     const response = await actualFetch(url, {
@@ -65,6 +66,7 @@ export class HttpClient {
    * Méthode POST
    */
   async post<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
+    console.log('Requête POST envoyée avec headers:', { ...this.defaultHeaders, ...config.headers });
     const url = this.buildUrl(endpoint, config.params);
     const actualFetch = customFetch || fetch;
     const response = await actualFetch(url, {
@@ -80,6 +82,7 @@ export class HttpClient {
    * Méthode PUT
    */
   async put<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
+    console.log('Requête PUT envoyée avec headers:', { ...this.defaultHeaders, ...config.headers });
     const url = this.buildUrl(endpoint, config.params);
     const actualFetch = customFetch || fetch;
     const response = await actualFetch(url, {
@@ -95,6 +98,7 @@ export class HttpClient {
    * Méthode DELETE
    */
   async delete<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
+    console.log('Requête DELETE envoyée avec headers:', { ...this.defaultHeaders, ...config.headers });
     const url = this.buildUrl(endpoint, config.params);
     const actualFetch = customFetch || fetch;
     const response = await actualFetch(url, {

@@ -5,6 +5,18 @@
   import { get } from 'svelte/store';
   import { authStore } from '$lib/services/authStore';
   import SessionExpiredHandler from '$lib/components/auth/SessionExpiredHandler.svelte';
+  import { onMount } from 'svelte';
+
+  // Effacer les tokens au démarrage de l'application pour forcer l'authentification
+  onMount(() => {
+    // Effacer les tokens d'authentification au démarrage
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('token_expiry');
+
+    // Réinitialiser l'état d'authentification
+    authStore.logout();
+  });
 
   // Props
   let { children } = $props();

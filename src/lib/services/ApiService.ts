@@ -76,6 +76,7 @@ class ApiService extends HttpClient {
 
   // Actualise le token d'authentification
   setAuthToken(token: string | null, expiry: Date | null = null) {
+    console.log('setAuthToken appelé avec token:', token ? token.substring(0, 10) + '...' : null);
     if (token) {
       this.setDefaultHeader('Authorization', `Bearer ${token}`);
       localStorage.setItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN, token);
@@ -89,23 +90,37 @@ class ApiService extends HttpClient {
       localStorage.removeItem(AUTH_CONFIG.STORAGE_KEYS.ACCESS_TOKEN);
       localStorage.removeItem(AUTH_CONFIG.STORAGE_KEYS.TOKEN_EXPIRY);
     }
+
+    console.log('Headers actuels dans HttpClient:', this['defaultHeaders']);
   }
 
   // Surcharge des méthodes pour gérer automatiquement le rafraîchissement du token
   async get<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
-    return await authManager.handleRequestWithAuth(() => super.get<T>(endpoint, config, customFetch));
+    return await authManager.handleRequestWithAuthInternal(
+      () => super.get<T>(endpoint, config, customFetch),
+      () => super.get<T>(endpoint, config, customFetch)
+    );
   }
 
   async post<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
-    return await authManager.handleRequestWithAuth(() => super.post<T>(endpoint, data, config, customFetch));
+    return await authManager.handleRequestWithAuthInternal(
+      () => super.post<T>(endpoint, data, config, customFetch),
+      () => super.post<T>(endpoint, data, config, customFetch)
+    );
   }
 
   async put<T>(endpoint: string, data?: any, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
-    return await authManager.handleRequestWithAuth(() => super.put<T>(endpoint, data, config, customFetch));
+    return await authManager.handleRequestWithAuthInternal(
+      () => super.put<T>(endpoint, data, config, customFetch),
+      () => super.put<T>(endpoint, data, config, customFetch)
+    );
   }
 
   async delete<T>(endpoint: string, config: HttpRequestConfig = {}, customFetch?: typeof fetch): Promise<T> {
-    return await authManager.handleRequestWithAuth(() => super.delete<T>(endpoint, config, customFetch));
+    return await authManager.handleRequestWithAuthInternal(
+      () => super.delete<T>(endpoint, config, customFetch),
+      () => super.delete<T>(endpoint, config, customFetch)
+    );
   }
 
   // Nettoyage des ressources
