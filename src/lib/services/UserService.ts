@@ -1,6 +1,19 @@
 import { apiService } from './ApiService';
 import type { HttpRequestConfig } from './HttpClient';
 
+// Interface pour les stations accessibles
+export interface StationAccessible {
+  id: string;
+  compagnie_id: string;
+  nom: string;
+  code: string;
+  adresse: string;
+  statut: string;
+  date_creation: string;
+  date_modification: string;
+  est_actif: boolean;
+}
+
 // Interfaces pour les réponses de l'API utilisateur
 export interface User {
   id: string;
@@ -14,6 +27,7 @@ export interface User {
   date_derniere_connexion: string;
   actif: boolean;
   compagnie_id: string;
+  stations_accessibles: StationAccessible[];
 }
 
 export interface Company {

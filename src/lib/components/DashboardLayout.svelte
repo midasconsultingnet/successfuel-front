@@ -29,6 +29,9 @@
   import { companyStore, type CompanyState } from '$lib/services/companyStore';
   import { getCurrentUser } from '$lib/utils/authUtils';
 
+  // Custom Components
+  import StationSelector from './StationSelector.svelte';
+
   // State
   let isSidebarOpen = $state(true);
   let isMobileMenuOpen = $state(false);
@@ -253,6 +256,11 @@
 
           <!-- Spacer to push right-aligned elements to the right -->
           <div class="flex-1"></div>
+
+          <!-- Sélecteur de station -->
+          <div class="mr-4">
+            <StationSelector />
+          </div>
 
           <!-- Barre d'outils droite -->
           <div class="flex items-center gap-2 sm:gap-4">
