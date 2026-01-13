@@ -58,5 +58,11 @@
   "or": "or",
   "phone": "Phone",
   "receivable": "Receivable",
-  "debt": "Debt"
+  "debt": "Debt",
+  "station_selection": "Station Selection",
+  "select_station_prompt": "Please select a station to continue",
+  "no_stations_available": "No Stations Available",
+  "no_stations_message": "You don't have access to any stations. Please contact your administrator.",
+  "select_station": "Select",
+  "copyright": "© {year} SuccessFuel. All rights reserved."
 }

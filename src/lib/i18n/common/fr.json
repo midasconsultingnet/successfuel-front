@@ -58,5 +58,11 @@
   "or": "ou",
   "phone": "Téléphone",
   "receivable": "Créance",
-  "debt": "Dette"
+  "debt": "Dette",
+  "station_selection": "Sélection de station",
+  "select_station_prompt": "Veuillez sélectionner une station pour continuer",
+  "no_stations_available": "Aucune station disponible",
+  "no_stations_message": "Vous n'avez accès à aucune station. Veuillez contacter votre administrateur.",
+  "select_station": "Sélectionner",
+  "copyright": "© {year} SuccessFuel. Tous droits réservés."
 }

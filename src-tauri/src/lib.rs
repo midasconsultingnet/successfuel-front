@@ -97,6 +97,12 @@ pub fn run() {
             window_main.set_position(PhysicalPosition::new(x_main, y_main)).unwrap();
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                // Fermer proprement l'application
+                window.close().unwrap();
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

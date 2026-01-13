@@ -50,8 +50,8 @@
 
     try {
       await authStore.login({ login: loginValue, password: passwordValue });
-      // Rediriger vers le dashboard après connexion réussie
-      goto('/dashboard');
+      // Rediriger vers la page de sélection de station après connexion réussie
+      goto('/select-station');
     } catch (err) {
       console.error('Erreur de connexion:', err);
       error = 'invalid_credentials'; // Utiliser la clé de traduction

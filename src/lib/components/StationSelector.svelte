@@ -18,21 +18,51 @@
   const handleStationChange = (stationId: string) => {
     console.log("Station sélectionnée:", stationId);
 
+    // Sauvegarder la station sélectionnée dans le localStorage
+    if (stationId) {
+      localStorage.setItem('selectedStationId', stationId);
+    }
+
+    // Mettre à jour l'état local
+    selectedStationId = stationId;
+
     // Émettre un événement personnalisé pour notifier les autres parties de l'application
     const event = new CustomEvent('stationChanged', { detail: { stationId } });
     window.dispatchEvent(event);
   };
 
+  // Fonction pour initialiser les stations et la sélection
+  const initializeStations = (authState: any) => {
+    if (authState.user && authState.user.stations_accessibles) {
+      stations = [...authState.user.stations_accessibles]; // Créer une nouvelle référence
+
+      // Charger la station précédemment sélectionnée depuis le localStorage
+      const storedStationId = localStorage.getItem('selectedStationId');
+
+      // Sélectionner la station stockée si elle est disponible et autorisée
+      if (storedStationId && stations.some((station: any) => station.id === storedStationId)) {
+        selectedStationId = storedStationId;
+      } else if (stations.length > 0 && !selectedStationId) {
+        // Sinon, sélectionner la première station si aucune n'est sélectionnée
+        selectedStationId = stations[0].id;
+      }
+    } else {
+      // Réinitialiser les stations si l'utilisateur n'est pas authentifié
+      stations = [];
+      selectedStationId = "";
+    }
+  };
+
+  // Variable pour suivre l'ID utilisateur et éviter les mises à jour inutiles
+  let userId = $state<string | null>(null);
+
   // S'abonner aux changements d'authentification pour charger les stations
   $effect(() => {
     const unsubscribe = authStore.subscribe((authState) => {
-      if (authState.user && authState.user.stations_accessibles) {
-        stations = authState.user.stations_accessibles;
-
-        // Sélectionner la première station si aucune n'est sélectionnée
-        if (stations.length > 0 && !selectedStationId) {
-          selectedStationId = stations[0].id;
-        }
+      // Ne mettre à jour que si l'utilisateur a changé
+      if (authState.user?.id !== userId) {
+        userId = authState.user?.id || null;
+        initializeStations(authState);
       }
     });
 
@@ -41,10 +71,21 @@
       unsubscribe();
     };
   });
+
+  // Effet pour sauvegarder dans localStorage quand la station change
+  $effect(() => {
+    if (selectedStationId) {
+      // Sauvegarder dans localStorage
+      localStorage.setItem('selectedStationId', selectedStationId);
+    }
+  });
 </script>
 
 <div class="relative">
-  <Select.Root type="single" bind:value={selectedStationId}>
+  <Select.Root
+    type="single"
+    bind:value={selectedStationId}
+  >
     <Select.Trigger class="w-[220px] justify-between">
       <div class="flex items-center gap-2">
         <BuildingIcon class="size-4" />
