@@ -2,8 +2,14 @@
   import { onMount } from 'svelte';
   import { partnerService, type Supplier, type Customer, type CreateSupplierRequest, type UpdateSupplierRequest, type CreateCustomerRequest, type UpdateCustomerRequest, extractSupplierType, extractCustomerCategory, integrateSupplierType, integrateCustomerCategory, type SupplierWithVirtualFields, type CustomerWithVirtualFields } from '$lib/services/PartnerService';
   import { configurationService } from '$lib/services/ConfigurationService';
+  import { planComptableService, type PlanComptable, type PlanComptableCreate, type PlanComptableHierarchy } from '$lib/services/PlanComptableService';
+  import { authStore } from '$lib/services/authStore';
   import { i18nStore } from '$lib/i18n';
   import Translate from '$lib/i18n/Translate.svelte';
+
+  // Types étendus pour les partenaires avec le libellé du compte comptable
+  type SupplierWithAccountLabel = Supplier & { compte_comptable_libelle?: string };
+  type CustomerWithAccountLabel = Customer & { compte_comptable_libelle?: string };
   import { Button } from '$lib/components/ui/button';
   import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '$lib/components/ui/card';
   import { Input } from '$lib/components/ui/input';
@@ -48,10 +54,10 @@
   });
 
   // Données de configuration des partenaires
-  let suppliers = $state<SupplierWithVirtualFields[]>([]);
-  let customers = $state<CustomerWithVirtualFields[]>([]);
-  let allSuppliers = $state<SupplierWithVirtualFields[]>([]);
-  let allCustomers = $state<CustomerWithVirtualFields[]>([]);
+  let suppliers = $state<SupplierWithAccountLabel[]>([]);
+  let customers = $state<CustomerWithAccountLabel[]>([]);
+  let allSuppliers = $state<SupplierWithAccountLabel[]>([]);
+  let allCustomers = $state<CustomerWithAccountLabel[]>([]);
 
   // États pour les formulaires fournisseurs
   let showAddSupplierDialog = $state(false);
@@ -64,11 +70,15 @@
   let supplierAddress = $state('');
   let supplierContactPerson = $state('');
   let supplierType = $state('');
+  let supplierAccount = $state<string | undefined>(undefined);  // ID du compte comptable sélectionné
+  let newAccountName = $state('');  // Nom du nouveau compte à créer
+  let createNewAccount = $state(false);  // Indicateur pour créer un nouveau compte
   let selectedSupplierId = $state('');
 
   // États pour l'édition fournisseur
-  let editingSupplier = $state<SupplierWithVirtualFields | null>(null);
+  let editingSupplier = $state<SupplierWithAccountLabel | null>(null);
   let editingSupplierType = $state('');
+  let editingSupplierAccount = $state<string | undefined>(undefined);
 
   // États pour les formulaires clients
   let showAddCustomerDialog = $state(false);
@@ -84,12 +94,109 @@
   let selectedCustomerId = $state('');
 
   // États pour l'édition client
-  let editingCustomer = $state<CustomerWithVirtualFields | null>(null);
+  let editingCustomer = $state<CustomerWithAccountLabel | null>(null);
   let editingCustomerCategory = $state('');
 
   // États pour le dialogue de validation de la configuration
   let showValidationDialog = $state(false);
   let validationResults = $state<any>(null);
+
+  // États pour les comptes comptables
+  let supplierAccounts = $state<PlanComptableHierarchy[]>([]);
+  let customerAccounts = $state<PlanComptableHierarchy[]>([]);
+  let loadingAccounts = $state(false);
+
+
+  // Fonction pour enrichir les données du fournisseur avec le libellé du compte comptable
+  function enrichSupplierWithAccountLabel(supplier: Supplier): SupplierWithAccountLabel {
+    // Le type est l'UUID du compte comptable stocké dans les métadonnées
+    // Le champ type au niveau racine sert uniquement à distinguer les entités dans la base de données
+    const type = supplier.metadonnees?.type as string || 'Fournisseur';
+
+    // Récupérer le libellé à partir du plan comptable pour l'affichage
+    let compte_comptable_libelle = '';
+    // Vérifier si le type est un UUID valide (ce qui indiquerait qu'il s'agit d'un ID de compte comptable)
+    const isUUID = typeof type === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(type);
+
+    if (isUUID && supplierAccounts.length > 0) {
+      const compte = supplierAccounts.find(c => c.id === type);
+      if (compte) {
+        compte_comptable_libelle = compte.libelle_compte;
+      } else {
+        // Si le compte n'est pas trouvé dans le plan comptable, on peut utiliser le type comme libellé
+        // ou afficher un message indiquant que le compte n'existe plus
+        compte_comptable_libelle = `Compte inconnu (${type})`;
+      }
+    } else if (!isUUID) {
+      // Si le type n'est pas un UUID, c'est probablement un ancien format ou une valeur personnalisée
+      // On l'affiche directement comme libellé
+      compte_comptable_libelle = type;
+    }
+
+    const contact_person = supplier.donnees_personnelles?.contact_person as string || 'Contact par défaut';
+    return {
+      ...supplier,
+      type,
+      contact_person,
+      compte_comptable_libelle
+    };
+  }
+
+  // Fonction pour enrichir les données du client avec le libellé du compte comptable
+  function enrichCustomerWithAccountLabel(customer: Customer): CustomerWithAccountLabel {
+    // Récupérer le libellé à partir du plan comptable pour l'affichage
+    let compte_comptable_libelle = '';
+
+    // Le type est l'UUID du compte comptable stocké dans les métadonnées
+    const type = customer.metadonnees?.type as string || '';
+
+    // Vérifier si le type est un UUID valide (ce qui indiquerait qu'il s'agit d'un ID de compte comptable)
+    const isUUID = typeof type === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(type);
+
+    if (isUUID && customerAccounts.length > 0) {
+      const compte = customerAccounts.find(c => c.id === type);
+      if (compte) {
+        compte_comptable_libelle = compte.libelle_compte;
+      } else {
+        // Si le compte n'est pas trouvé dans le plan comptable, on peut utiliser le type comme libellé
+        // ou afficher un message indiquant que le compte n'existe plus
+        compte_comptable_libelle = `Compte inconnu (${type})`;
+      }
+    }
+
+    const contact_person = customer.donnees_personnelles?.contact_person as string || 'Contact par défaut';
+
+    return {
+      ...customer,
+      contact_person,
+      compte_comptable_libelle
+    } as any; // Extension temporaire pour inclure le champ d'affichage
+  }
+
+
+
+
+
+  // Effet réactif pour s'assurer que le Select est correctement mis à jour
+  $effect(() => {
+    // Ce simple effet assure que le Select réagit correctement aux changements
+    // de l'état des données
+    if (!loadingAccounts && supplierAccounts.length > 0) {
+      // Forcer une mise à jour mineure pour s'assurer que le Select est à jour
+      const currentEditingAccount = editingSupplierAccount;
+      const currentSupplierAccount = supplierAccount;
+
+      // Vérifier que les comptes sélectionnés existent toujours dans la liste
+      if (currentEditingAccount && !supplierAccounts.some(acc => acc.id === currentEditingAccount)) {
+        editingSupplierAccount = undefined;
+      }
+
+      if (currentSupplierAccount && !supplierAccounts.some(acc => acc.id === currentSupplierAccount)) {
+        supplierAccount = undefined;
+      }
+    }
+  });
+
 
 
   // Charger les données
@@ -101,23 +208,27 @@
 
       // Vérifier que stationId est une chaîne de caractères valide avant de faire l'appel API
       if (typeof stationId === 'string' && stationId && stationId.trim() !== '') {
+        // Charger les comptes comptables pour les fournisseurs en premier
+        const { supplierAccs, customerAccs } = await loadSupplierAccounts();
+
         // Charger les fournisseurs et clients associés à la station
         let fetchedSuppliers = await partnerService.getStationSuppliers(stationId);
         let fetchedCustomers = await partnerService.getStationCustomers(stationId);
 
         // Extraire les champs virtuels pour les affichages
-        suppliers = fetchedSuppliers.map(extractSupplierType);
-        customers = fetchedCustomers.map(extractCustomerCategory);
+        suppliers = fetchedSuppliers.map(enrichSupplierWithAccountLabel);
+        customers = fetchedCustomers.map(enrichCustomerWithAccountLabel);
 
         // Charger tous les fournisseurs et clients de la compagnie pour la sélection
-        allSuppliers = (await partnerService.getAllSuppliers()).map(extractSupplierType);
-        allCustomers = (await partnerService.getAllCustomers()).map(extractCustomerCategory);
+        allSuppliers = (await partnerService.getAllSuppliers()).map(enrichSupplierWithAccountLabel);
+        allCustomers = (await partnerService.getAllCustomers()).map(enrichCustomerWithAccountLabel);
       } else {
         console.error('ID de station invalide:', stationId, 'type:', typeof stationId);
         suppliers = [];
         customers = [];
         allSuppliers = [];
         allCustomers = [];
+        supplierAccounts = [];
       }
 
     } catch (err) {
@@ -129,6 +240,7 @@
       customers = [];
       allSuppliers = [];
       allCustomers = [];
+      supplierAccounts = [];
     } finally {
       loading = false;
       console.log('Chargement terminé, loading:', loading);
@@ -191,11 +303,128 @@
     console.log('Station info:', stationInfo);
   });
 
+  // Charger les comptes comptables pour les fournisseurs
+  async function loadSupplierAccounts(): Promise<{supplierAccs: PlanComptable[], customerAccs: PlanComptable[]}> {
+    try {
+      loadingAccounts = true;
+
+      // Récupérer tous les comptes du plan comptable
+      const allAccounts = await planComptableService.getFullPlanHierarchy();
+
+      // Filtrer pour obtenir uniquement les comptes enfants de "Fournisseurs" (401)
+      // On suppose que le compte "Fournisseurs" a le numéro 401 ou un libellé correspondant
+      const supplierAccs = findSupplierAccounts(allAccounts);
+
+      // Filtrer pour obtenir uniquement les comptes enfants de "Clients" (411)
+      // On suppose que le compte "Clients" a le numéro 411 ou un libellé correspondant
+      const customerAccs = findCustomerAccounts(allAccounts);
+
+      // Mettre à jour les états
+      supplierAccounts = supplierAccs;
+      customerAccounts = customerAccs;
+
+      return { supplierAccs, customerAccs };
+    } catch (err) {
+      console.error('Erreur lors du chargement des comptes comptables pour les fournisseurs et clients:', err);
+      error = 'Impossible de charger les comptes comptables: ' + (err as Error).message;
+      supplierAccounts = [];
+      customerAccounts = [];
+
+      return { supplierAccs: [], customerAccs: [] };
+    } finally {
+      loadingAccounts = false;
+    }
+  }
+
+  // Fonction récursive pour trouver les comptes enfants de "Fournisseurs"
+  function findSupplierAccounts(accounts: PlanComptableHierarchy[], parentIsSupplier = false): PlanComptableHierarchy[] {
+    let result: PlanComptableHierarchy[] = [];
+
+    for (const account of accounts) {
+      // Vérifier si c'est un compte "Fournisseurs" ou un de ses enfants
+      const isSupplierAccount = parentIsSupplier ||
+                               account.numero_compte?.startsWith('401') ||
+                               account.libelle_compte.toLowerCase().includes('fournisseur');
+
+      if (isSupplierAccount && account.numero_compte !== '401') { // Exclure le compte parent 401 lui-même
+        result.push(account);
+      }
+
+      // Explorer récursivement les enfants
+      if (account.enfants && account.enfants.length > 0) {
+        const childAccounts = findSupplierAccounts(account.enfants, isSupplierAccount);
+        result = result.concat(childAccounts);
+      }
+    }
+
+    return result;
+  }
+
+
+  // Fonction récursive pour trouver les comptes enfants de "Clients"
+  function findCustomerAccounts(accounts: PlanComptableHierarchy[], parentIsCustomer = false): PlanComptableHierarchy[] {
+    let result: PlanComptableHierarchy[] = [];
+
+    for (const account of accounts) {
+      // Vérifier si c'est un compte "Clients" ou un de ses enfants
+      const isCustomerAccount = parentIsCustomer ||
+                               account.numero_compte?.startsWith('411') ||
+                               account.libelle_compte.toLowerCase().includes('client');
+
+      if (isCustomerAccount && account.numero_compte !== '411') { // Exclure le compte parent 411 lui-même
+        result.push(account);
+      }
+
+      // Explorer récursivement les enfants
+      if (account.enfants && account.enfants.length > 0) {
+        const childAccounts = findCustomerAccounts(account.enfants, isCustomerAccount);
+        result = result.concat(childAccounts);
+      }
+    }
+
+    return result;
+  }
+
   // Fonctions pour les fournisseurs
   async function addSupplier() {
     try {
       if (!supplierName || !stationId) {
         throw new Error('Le nom et l\'ID de station sont requis');
+      }
+
+      let compteComptableId: string | null = null;
+
+      // Si l'utilisateur veut créer un nouveau compte
+      if (createNewAccount && newAccountName) {
+        // Trouver le compte parent "Fournisseurs" (401)
+        const parentAccount = await findSupplierParentAccount();
+
+        // Créer un nouveau compte comptable pour ce fournisseur
+        const newAccount: PlanComptableCreate = {
+          libelle_compte: newAccountName
+        };
+
+        // Récupérer l'ID de la compagnie depuis le store d'authentification
+        const authState = get(authStore);
+        if (authState.user?.compagnie_id) {
+          newAccount.compagnie_id = authState.user.compagnie_id;
+        } else {
+          throw new Error('ID de la compagnie non disponible');
+        }
+
+        if (parentAccount) {
+          newAccount.parent_id = parentAccount.id;
+        }
+
+        const createdAccount = await planComptableService.createPlanComptable(newAccount);
+        compteComptableId = createdAccount.id;
+      }
+      // Sinon, utiliser le compte sélectionné s'il existe
+      else if (supplierAccount) {
+        compteComptableId = supplierAccount;
+        // Récupérer le libellé du compte
+        const selectedAccount = supplierAccounts.find(acc => acc.id === supplierAccount);
+        // Ne rien faire - on n'utilise plus compteComptableLibelle
       }
 
       // Créer l'objet du nouveau fournisseur
@@ -206,12 +435,15 @@
         email: supplierEmail,
         telephone: supplierPhone,
         adresse: supplierAddress,
-        type: supplierType || 'other',
+        type: 'fournisseur', // Le type racine indique le type d'entité
         donnees_personnelles: {
           contact_person: supplierContactPerson || supplierName
         },  // Données personnelles contenant le contact
         metadonnees: {              // Métadonnées optionnelles
-          type: supplierType || 'other'
+          type: compteComptableId || 'Fournisseur', // Le type dans les métadonnées est l'UUID du compte
+          ...(compteComptableId && {
+            compte_comptable_id: compteComptableId
+          })
         }
       };
 
@@ -219,7 +451,7 @@
       const newSupplier = await partnerService.createSupplierForStation(stationId, newSupplierData);
 
       // Extraire les champs virtuels et ajouter le nouveau fournisseur à la liste locale
-      const extractedSupplier = extractSupplierType(newSupplier);
+      const extractedSupplier = enrichSupplierWithAccountLabel(newSupplier);
       suppliers = [...suppliers, extractedSupplier];
 
       // Réinitialiser le formulaire
@@ -230,6 +462,9 @@
       supplierAddress = '';
       supplierContactPerson = '';
       supplierType = '';
+      supplierAccount = undefined;
+      newAccountName = '';
+      createNewAccount = false;
 
       console.log('Fournisseur ajouté avec succès:', newSupplier);
     } catch (err) {
@@ -238,10 +473,78 @@
     }
   }
 
+  // Fonction pour générer un numéro de compte fournisseur
+  function generateSupplierAccountNumber(): string {
+    // Générer un numéro de compte basé sur la date pour assurer l'unicité
+    return `401.${Date.now()}`;
+  }
+
+  // Fonction pour trouver le compte parent "Fournisseurs" (401)
+  async function findSupplierParentAccount(): Promise<PlanComptable | undefined> {
+    try {
+      const allAccounts = await planComptableService.getFullPlanHierarchy();
+      return findAccountByNumber(allAccounts, '401');
+    } catch (err) {
+      console.error('Erreur lors de la recherche du compte parent fournisseurs:', err);
+      return undefined;
+    }
+  }
+
+  // Fonction récursive pour trouver un compte par son numéro
+  function findAccountByNumber(accounts: PlanComptableHierarchy[], numero: string): PlanComptableHierarchy | undefined {
+    for (const account of accounts) {
+      if (account.numero_compte === numero) {
+        return account;
+      }
+
+      if (account.enfants && account.enfants.length > 0) {
+        const found = findAccountByNumber(account.enfants, numero);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+
+
   async function updateSupplier() {
     try {
       if (!editingSupplier || !editingSupplier.id) {
         throw new Error('Aucun fournisseur à éditer');
+      }
+
+      let compteComptableId: string | null = null;
+
+      // Si l'utilisateur veut créer un nouveau compte
+      if (createNewAccount && newAccountName) {
+        // Trouver le compte parent "Fournisseurs" (401)
+        const parentAccount = await findSupplierParentAccount();
+
+        // Créer un nouveau compte comptable pour ce fournisseur
+        const newAccount: PlanComptableCreate = {
+          libelle_compte: newAccountName
+        };
+
+        // Récupérer l'ID de la compagnie depuis le store d'authentification
+        const authState = get(authStore);
+        if (authState.user?.compagnie_id) {
+          newAccount.compagnie_id = authState.user.compagnie_id;
+        } else {
+          throw new Error('ID de la compagnie non disponible');
+        }
+
+        if (parentAccount) {
+          newAccount.parent_id = parentAccount.id;
+        }
+
+        const createdAccount = await planComptableService.createPlanComptable(newAccount);
+        compteComptableId = createdAccount.id;
+      }
+      // Sinon, utiliser le compte sélectionné s'il existe
+      else if (editingSupplierAccount) {
+        compteComptableId = editingSupplierAccount;
+        // Récupérer le libellé du compte
+        const selectedAccount = supplierAccounts.find(acc => acc.id === editingSupplierAccount);
+        // Ne rien faire - on n'utilise plus compteComptableLibelle
       }
 
       // Mettre à jour le fournisseur dans la base de données
@@ -252,7 +555,10 @@
 
       const metadonnees = {
         ...editingSupplier.metadonnees,
-        type: editingSupplierType
+        type: compteComptableId || 'Fournisseur', // Le type dans les métadonnées est l'UUID du compte
+        ...(compteComptableId && {
+          compte_comptable_id: compteComptableId
+        })
       };
 
       const updateData: UpdateSupplierRequest = {
@@ -260,6 +566,7 @@
         email: editingSupplier.email,
         telephone: editingSupplier.telephone,
         adresse: editingSupplier.adresse,
+        type: 'fournisseur', // Le type racine indique le type d'entité
         donnees_personnelles,
         metadonnees
       };
@@ -267,7 +574,7 @@
       const updatedSupplier = await partnerService.updateSupplier(editingSupplier.id, updateData);
 
       // Extraire les champs virtuels et mettre à jour dans la liste
-      const extractedUpdatedSupplier = extractSupplierType(updatedSupplier);
+      const extractedUpdatedSupplier = enrichSupplierWithAccountLabel(updatedSupplier);
       suppliers = suppliers.map(sup =>
         sup.id === editingSupplier!.id
           ? extractedUpdatedSupplier
@@ -277,6 +584,9 @@
       // Fermer la boîte de dialogue
       showEditSupplierDialog = false;
       editingSupplier = null;
+      editingSupplierAccount = undefined;
+      newAccountName = '';
+      createNewAccount = false;
 
       console.log('Fournisseur mis à jour avec succès');
     } catch (err) {
@@ -297,7 +607,7 @@
       // Charger les données mises à jour
       let fetchedSuppliers = await partnerService.getStationSuppliers(stationId);
       // Extraire les champs virtuels pour l'affichage
-      suppliers = fetchedSuppliers.map(extractSupplierType);
+      suppliers = fetchedSuppliers.map(enrichSupplierWithAccountLabel);
 
       // Réinitialiser le formulaire
       selectedSupplierId = '';
@@ -320,7 +630,7 @@
 
       // Recharger les données mises à jour
       let fetchedSuppliers = await partnerService.getStationSuppliers(stationId);
-      suppliers = fetchedSuppliers.map(extractSupplierType);
+      suppliers = fetchedSuppliers.map(enrichSupplierWithAccountLabel);
 
       console.log('Fournisseur dissocié de la station avec succès');
     } catch (err) {
@@ -329,11 +639,48 @@
     }
   }
 
-  function prepareEditSupplier(supplier: SupplierWithVirtualFields) {
+  function prepareEditSupplier(supplier: SupplierWithAccountLabel) {
     editingSupplier = { ...supplier };
-    editingSupplierType = supplier.type || '';
+
+    // Le type du fournisseur est directement l'UUID du compte comptable
+    // On le définit comme compte à éditer
+    const typeIsUUID = typeof supplier.type === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(supplier.type);
+
+    // Définir le compte à éditer à la valeur du type si c'est un UUID
+    editingSupplierAccount = typeIsUUID ? supplier.type as string : undefined;
+
+    // Le type est l'ID du compte comptable
+    editingSupplierType = supplier.type || 'Fournisseur';
+
+    // Afficher un message de débogage
+    console.log('prepareEditSupplier appelé:', {
+      supplierId: supplier.id,
+      supplierType: supplier.type,
+      editingSupplierAccount,
+      supplierAccountsCount: supplierAccounts.length
+    });
+
     showEditSupplierDialog = true;
   }
+
+  // Fonction pour réinitialiser le formulaire de fournisseur
+  function resetSupplierForm() {
+    supplierName = '';
+    supplierEmail = '';
+    supplierPhone = '';
+    supplierAddress = '';
+    supplierContactPerson = '';
+    supplierType = 'other'; // Utiliser 'other' comme valeur par défaut
+    supplierAccount = undefined;
+    newAccountName = '';
+    createNewAccount = false;
+  }
+
+
+  // États pour la gestion des comptes clients
+  let customerAccount = $state<string | undefined>(undefined);
+  let createNewCustomerAccount = $state(false);
+  let newCustomerAccountName = $state('');
 
   // Fonctions pour les clients
   async function addCustomer() {
@@ -341,6 +688,50 @@
       if (!customerName || !stationId) {
         throw new Error('Le nom et l\'ID de station sont requis');
       }
+
+      let compteComptableId: string | null = null;
+
+      // Si l'utilisateur veut créer un nouveau compte
+      if (createNewCustomerAccount) {
+        // Vérifier que le nom du nouveau compte n'est pas vide
+        if (!newCustomerAccountName || newCustomerAccountName.trim() === '') {
+          throw new Error('Le nom du nouveau type de client est requis');
+        }
+
+        // Trouver le compte parent "Clients" (411)
+        const allAccounts = await planComptableService.getFullPlanHierarchy();
+        const parentAccount = findAccountByNumber(allAccounts, '411');
+
+        // Créer un nouveau compte comptable pour ce client
+        const newAccount: PlanComptableCreate = {
+          libelle_compte: newCustomerAccountName
+        };
+
+        // Récupérer l'ID de la compagnie depuis le store d'authentification
+        const authState = get(authStore);
+        if (authState.user?.compagnie_id) {
+          newAccount.compagnie_id = authState.user.compagnie_id;
+        } else {
+          throw new Error('ID de la compagnie non disponible');
+        }
+
+        if (parentAccount) {
+          newAccount.parent_id = parentAccount.id;
+        }
+
+        const createdAccount = await planComptableService.createPlanComptable(newAccount);
+        compteComptableId = createdAccount.id;
+
+        // Rafraîchir les comptes clients pour inclure le nouveau compte
+        await loadSupplierAccounts();
+      }
+      // Sinon, utiliser le compte sélectionné s'il existe
+      else if (customerAccount) {
+        compteComptableId = customerAccount;
+      }
+
+      // Déterminer le type final - si un compte comptable est sélectionné, utiliser son UUID
+      const finalType = compteComptableId || 'particulier';
 
       // Créer l'objet du nouveau client
       const newCustomerData: CreateCustomerRequest = {
@@ -350,12 +741,12 @@
         email: customerEmail,
         telephone: customerPhone,
         adresse: customerAddress,
-        categorie: customerCategory || 'particulier',
+        categorie: 'client', // Le type racine indique le type d'entité
         donnees_personnelles: {
           contact_person: customerContactPerson || customerName
         },  // Données personnelles contenant le contact
         metadonnees: {              // Métadonnées optionnelles
-          categorie: customerCategory || 'particulier'
+          type: finalType // Le type dans les métadonnées est l'UUID du compte
         }
       };
 
@@ -373,7 +764,10 @@
       customerPhone = '';
       customerAddress = '';
       customerContactPerson = '';
-      customerCategory = '';
+      customerCategory = 'particulier';
+      customerAccount = undefined;
+      newCustomerAccountName = '';
+      createNewCustomerAccount = false;
 
       console.log('Client ajouté avec succès:', newCustomer);
     } catch (err) {
@@ -388,6 +782,50 @@
         throw new Error('Aucun client à éditer');
       }
 
+      let compteComptableId: string | null = null;
+
+      // Si l'utilisateur veut créer un nouveau compte
+      if (createNewCustomerAccount) {
+        // Vérifier que le nom du nouveau compte n'est pas vide
+        if (!newCustomerAccountName || newCustomerAccountName.trim() === '') {
+          throw new Error('Le nom du nouveau type de client est requis');
+        }
+
+        // Trouver le compte parent "Clients" (411)
+        const allAccounts = await planComptableService.getFullPlanHierarchy();
+        const parentAccount = findAccountByNumber(allAccounts, '411');
+
+        // Créer un nouveau compte comptable pour ce client
+        const newAccount: PlanComptableCreate = {
+          libelle_compte: newCustomerAccountName
+        };
+
+        // Récupérer l'ID de la compagnie depuis le store d'authentification
+        const authState = get(authStore);
+        if (authState.user?.compagnie_id) {
+          newAccount.compagnie_id = authState.user.compagnie_id;
+        } else {
+          throw new Error('ID de la compagnie non disponible');
+        }
+
+        if (parentAccount) {
+          newAccount.parent_id = parentAccount.id;
+        }
+
+        const createdAccount = await planComptableService.createPlanComptable(newAccount);
+        compteComptableId = createdAccount.id;
+
+        // Rafraîchir les comptes clients pour inclure le nouveau compte
+        await loadSupplierAccounts();
+      }
+      // Sinon, utiliser le compte sélectionné s'il existe
+      else if (customerAccount) {
+        compteComptableId = customerAccount;
+      }
+
+      // Déterminer le type final - si un compte comptable est sélectionné, utiliser son UUID
+      const finalType = compteComptableId || 'particulier';
+
       // Mettre à jour le client dans la base de données
       const donnees_personnelles = {
         ...editingCustomer.donnees_personnelles,
@@ -396,7 +834,7 @@
 
       const metadonnees = {
         ...editingCustomer.metadonnees,
-        categorie: editingCustomerCategory
+        type: finalType // Le type dans les métadonnées est l'UUID du compte
       };
 
       const updateData: UpdateCustomerRequest = {
@@ -404,6 +842,7 @@
         email: editingCustomer.email,
         telephone: editingCustomer.telephone,
         adresse: editingCustomer.adresse,
+        categorie: 'client', // Le type racine indique le type d'entité
         donnees_personnelles,
         metadonnees
       };
@@ -411,7 +850,7 @@
       const updatedCustomer = await partnerService.updateCustomer(editingCustomer.id, updateData);
 
       // Extraire les champs virtuels et mettre à jour dans la liste
-      const extractedUpdatedCustomer = extractCustomerCategory(updatedCustomer);
+      const extractedUpdatedCustomer = enrichCustomerWithAccountLabel(updatedCustomer);
       customers = customers.map(cust =>
         cust.id === editingCustomer!.id
           ? extractedUpdatedCustomer
@@ -421,6 +860,9 @@
       // Fermer la boîte de dialogue
       showEditCustomerDialog = false;
       editingCustomer = null;
+      customerAccount = undefined;
+      newCustomerAccountName = '';
+      createNewCustomerAccount = false;
 
       console.log('Client mis à jour avec succès');
     } catch (err) {
@@ -441,7 +883,7 @@
       // Charger les données mises à jour
       let fetchedCustomers = await partnerService.getStationCustomers(stationId);
       // Extraire les champs virtuels pour l'affichage
-      customers = fetchedCustomers.map(extractCustomerCategory);
+      customers = fetchedCustomers.map(enrichCustomerWithAccountLabel);
 
       // Réinitialiser le formulaire
       selectedCustomerId = '';
@@ -464,7 +906,7 @@
 
       // Recharger les données mises à jour
       let fetchedCustomers = await partnerService.getStationCustomers(stationId);
-      customers = fetchedCustomers.map(extractCustomerCategory);
+      customers = fetchedCustomers.map(enrichCustomerWithAccountLabel);
 
       console.log('Client dissocié de la station avec succès');
     } catch (err) {
@@ -473,9 +915,27 @@
     }
   }
 
-  function prepareEditCustomer(customer: CustomerWithVirtualFields) {
+  function prepareEditCustomer(customer: CustomerWithAccountLabel) {
     editingCustomer = { ...customer };
-    editingCustomerCategory = customer.categorie || '';
+
+    // Charger le compte comptable sélectionné s'il existe
+    // Le type dans les métadonnées contient l'UUID du compte comptable
+    const typeIsUUID = typeof customer.metadonnees?.type === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(customer.metadonnees.type as string);
+
+    // Définir le compte à éditer à la valeur du type si c'est un UUID
+    customerAccount = typeIsUUID ? customer.metadonnees?.type as string : undefined;
+
+    // Le type est l'ID du compte comptable
+    editingCustomerCategory = customer.metadonnees?.type as string || 'particulier';
+
+    // Afficher un message de débogage
+    console.log('prepareEditCustomer appelé:', {
+      customerId: customer.id,
+      customerType: customer.metadonnees?.type,
+      customerAccount,
+      customerAccountsCount: customerAccounts.length
+    });
+
     showEditCustomerDialog = true;
   }
 
@@ -496,7 +956,7 @@
       validation.suppliers.isValid = true;
       validation.suppliers.message = `${suppliers.length} fournisseur(s) configuré(s)`;
       validation.suppliers.details = suppliers.map(supplier =>
-        `${supplier.nom} (${supplier.type || 'Type non spécifié'})`
+        `${supplier.nom} (${supplier.compte_comptable_libelle || 'Type non spécifié'})`
       );
     }
 
@@ -506,7 +966,7 @@
     } else {
       validation.customers.message = `${customers.length} client(s) configuré(s)`;
       validation.customers.details = customers.map(customer =>
-        `${customer.nom} (${customer.categorie || 'Catégorie non spécifiée'})`
+        `${customer.nom} (${customer.compte_comptable_libelle || 'Compte non spécifié'})`
       );
     }
 
@@ -713,22 +1173,82 @@
                               />
                             </div>
 
+                            <!-- Champ pour le compte comptable (qui servira aussi de type) -->
                             <div class="space-y-2 sm:col-span-2">
-                              <Label for="supplierType">
-                                <Translate key="type" module="configuration" fallback="Type" />
+                              <Label for="supplierAccount">
+                                <Translate key="supplier_type" module="configuration" fallback="Type de fournisseur" /> *
                               </Label>
-                              <Input
-                                id="supplierType"
-                                bind:value={supplierType}
-                                autocomplete="one-time-code"
-                                placeholder={get(i18nStore).resources?.configuration?.supplier_type || 'Type de fournisseur'}
-                              />
+
+                              {#if loadingAccounts}
+                                <div class="flex items-center space-x-2">
+                                  <Spinner class="w-4 h-4" />
+                                  <span>
+                                    <Translate key="loading_accounts" module="configuration" fallback="Chargement des comptes..." />
+                                  </span>
+                                </div>
+                              {:else}
+                                <div class="space-y-2">
+                                  <Select.Root bind:value={supplierAccount} type="single">
+                                    <Select.Trigger class="w-full">
+                                      <span data-slot="select-value">
+                                        {#if supplierAccount}
+                                          {@const selectedAccount = supplierAccounts.find(acc => acc.id === supplierAccount)}
+                                          {#if selectedAccount}
+                                            {selectedAccount.libelle_compte} ({selectedAccount.numero_compte})
+                                          {:else}
+                                            {get(i18nStore).resources?.configuration?.select_supplier_type || 'Sélectionnez le type de fournisseur'}
+                                          {/if}
+                                        {:else}
+                                          {get(i18nStore).resources?.configuration?.select_supplier_type || 'Sélectionnez le type de fournisseur'}
+                                        {/if}
+                                      </span>
+                                    </Select.Trigger>
+                                    <Select.Content>
+                                      <Select.Group>
+                                        <Select.Label>
+                                          <Translate key="supplier_types" module="configuration" fallback="Types de fournisseurs" />
+                                        </Select.Label>
+                                        {#each supplierAccounts as account (account.id)}
+                                          <Select.Item value={account.id}>
+                                            {account.libelle_compte} ({account.numero_compte})
+                                          </Select.Item>
+                                        {/each}
+                                      </Select.Group>
+                                    </Select.Content>
+                                  </Select.Root>
+
+                                  <div class="flex items-center space-x-2">
+                                    <input
+                                      type="checkbox"
+                                      id="createNewAccount"
+                                      bind:checked={createNewAccount}
+                                      class="rounded border-gray-300 text-primary focus:ring-primary"
+                                    />
+                                    <Label for="createNewAccount" class="text-sm">
+                                      <Translate key="create_new_supplier_type" module="configuration" fallback="Créer un nouveau type de fournisseur" />
+                                    </Label>
+                                  </div>
+                                </div>
+                              {/if}
+
+                              {#if createNewAccount}
+                                <div class="space-y-2 mt-2">
+                                  <Label for="newAccountName">
+                                    <Translate key="new_supplier_type_name" module="configuration" fallback="Nom du nouveau type de fournisseur" /> *
+                                  </Label>
+                                  <Input
+                                    id="newAccountName"
+                                    bind:value={newAccountName}
+                                    placeholder={get(i18nStore).resources?.configuration?.enter_supplier_type_name || 'Entrez le nom du nouveau type de fournisseur'}
+                                  />
+                                </div>
+                              {/if}
                             </div>
                           </div>
 
                           <Button
                             onclick={addSupplier}
-                            disabled={!supplierName}
+                            disabled={!supplierName || (!supplierAccount && !createNewAccount) || (createNewAccount && !newAccountName)}
                             class="w-full"
                           >
                             <Translate key="add_new_supplier" module="configuration" fallback="Ajouter nouveau fournisseur" />
@@ -768,7 +1288,7 @@
                               <Select.Content>
                                 {#each allSuppliers.filter(s => !suppliers.some(sup => sup.id === s.id)) as supplier}
                                   <Select.Item value={supplier.id}>
-                                    {supplier.nom} ({supplier.type || get(i18nStore).resources?.configuration?.no_type || 'Type non spécifié'})
+                                    {supplier.nom} ({supplier.compte_comptable_libelle || get(i18nStore).resources?.configuration?.no_type || 'Type non spécifié'})
                                   </Select.Item>
                                 {/each}
                               </Select.Content>
@@ -789,11 +1309,7 @@
                           variant="outline"
                           onclick={() => {
                             showAddSupplierDialog = false;
-                            supplierName = '';
-                            supplierEmail = '';
-                            supplierPhone = '';
-                            supplierAddress = '';
-                            supplierType = '';
+                            resetSupplierForm();
                             selectedSupplierId = '';
                           }}
                         >
@@ -837,7 +1353,7 @@
                             <Label>
                               <Translate key="type" module="configuration" fallback="Type" />
                             </Label>
-                            <p class="font-medium">{supplier.type || get(i18nStore).resources?.configuration?.no_type || 'Type non spécifié'}</p>
+                            <p class="font-medium">{supplier.compte_comptable_libelle || get(i18nStore).resources?.configuration?.no_type || 'Type non spécifié'}</p>
                           </div>
                           <div class="flex justify-end space-x-2">
                             <Button
@@ -971,21 +1487,71 @@
                             </div>
 
                             <div class="space-y-2 sm:col-span-2">
-                              <Label for="customerCategory">
-                                <Translate key="category" module="configuration" fallback="Catégorie" />
+                              <Label for="customerAccount">
+                                <Translate key="customer_account" module="configuration" fallback="Compte client" />
                               </Label>
-                              <Input
-                                id="customerCategory"
-                                bind:value={customerCategory}
-                                autocomplete="one-time-code"
-                                placeholder={get(i18nStore).resources?.configuration?.customer_category || 'Catégorie du client'}
-                              />
+                              <Select.Root bind:value={customerAccount} type="single">
+                                <Select.Trigger class="w-full">
+                                  <span data-slot="select-value">
+                                    {#if customerAccount}
+                                      {@const selectedAccount = customerAccounts.find(acc => acc.id === customerAccount)}
+                                      {#if selectedAccount}
+                                        {selectedAccount.libelle_compte} ({selectedAccount.numero_compte})
+                                      {:else}
+                                        {get(i18nStore).resources?.configuration?.select_customer_type || 'Sélectionnez le type de client'}
+                                      {/if}
+                                    {:else}
+                                      {get(i18nStore).resources?.configuration?.select_customer_type || 'Sélectionnez le type de client'}
+                                    {/if}
+                                  </span>
+                                </Select.Trigger>
+                                <Select.Content>
+                                  <Select.Group>
+                                    <Select.Label>
+                                      <Translate key="customer_types" module="configuration" fallback="Types de clients" />
+                                    </Select.Label>
+                                    {#each customerAccounts as account (account.id)}
+                                      <Select.Item value={account.id}>
+                                        {account.libelle_compte} ({account.numero_compte})
+                                      </Select.Item>
+                                    {/each}
+                                  </Select.Group>
+                                </Select.Content>
+                              </Select.Root>
                             </div>
+
+                            <!-- Case à cocher pour créer un nouveau type de client -->
+                            <div class="flex items-center space-x-2 sm:col-span-2">
+                              <input
+                                id="createNewCustomerAccount"
+                                type="checkbox"
+                                bind:checked={createNewCustomerAccount}
+                                class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 focus:ring-2"
+                              />
+                              <Label for="createNewCustomerAccount" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                                <Translate key="create_new_customer_type" module="configuration" fallback="Créer un nouveau type de client" />
+                              </Label>
+                            </div>
+
+                            <!-- Champ pour le nom du nouveau type de client -->
+                            {#if createNewCustomerAccount}
+                              <div class="space-y-2 sm:col-span-2">
+                                <Label for="newCustomerAccountName">
+                                  <Translate key="new_customer_type_name" module="configuration" fallback="Nom du nouveau type de client" />
+                                </Label>
+                                <Input
+                                  id="newCustomerAccountName"
+                                  bind:value={newCustomerAccountName}
+                                  autocomplete="one-time-code"
+                                  placeholder={get(i18nStore).resources?.configuration?.customer_type_name || 'Nom du nouveau type de client'}
+                                />
+                              </div>
+                            {/if}
                           </div>
 
                           <Button
                             onclick={addCustomer}
-                            disabled={!customerName}
+                            disabled={!customerName || (!customerAccount && !createNewCustomerAccount) || (createNewCustomerAccount && !newCustomerAccountName)}
                             class="w-full"
                           >
                             <Translate key="add_new_customer" module="configuration" fallback="Ajouter nouveau client" />
@@ -1025,7 +1591,7 @@
                               <Select.Content>
                                 {#each allCustomers.filter(c => !customers.some(cust => cust.id === c.id)) as customer}
                                   <Select.Item value={customer.id}>
-                                    {customer.nom} ({customer.categorie || get(i18nStore).resources?.configuration?.no_category || 'Catégorie non spécifiée'})
+                                    {customer.nom} ({customer.compte_comptable_libelle || get(i18nStore).resources?.configuration?.no_account || 'Compte non spécifié'})
                                   </Select.Item>
                                 {/each}
                               </Select.Content>
@@ -1050,7 +1616,11 @@
                             customerEmail = '';
                             customerPhone = '';
                             customerAddress = '';
-                            customerCategory = '';
+                            customerContactPerson = '';
+                            customerCategory = 'particulier';
+                            customerAccount = undefined;
+                            newCustomerAccountName = '';
+                            createNewCustomerAccount = false;
                             selectedCustomerId = '';
                           }}
                         >
@@ -1094,7 +1664,7 @@
                             <Label>
                               <Translate key="category" module="configuration" fallback="Catégorie" />
                             </Label>
-                            <p class="font-medium">{customer.categorie || get(i18nStore).resources?.configuration?.no_category || 'Catégorie non spécifiée'}</p>
+                            <p class="font-medium">{customer.compte_comptable_libelle || get(i18nStore).resources?.configuration?.no_account || 'Compte non spécifié'}</p>
                           </div>
                           <div class="flex justify-end space-x-2">
                             <Button
@@ -1204,16 +1774,77 @@
                 />
               </div>
 
+              <!-- Champ pour le compte comptable (qui servira aussi de type) -->
               <div class="space-y-2 sm:col-span-2">
-                <Label for="editSupplierType">
-                  <Translate key="type" module="configuration" fallback="Type" />
+                <Label for="editSupplierAccount">
+                  <Translate key="supplier_type" module="configuration" fallback="Type de fournisseur" />
                 </Label>
-                <Input
-                  id="editSupplierType"
-                  bind:value={editingSupplierType}
-                  autocomplete="one-time-code"
-                  placeholder={get(i18nStore).resources?.configuration?.supplier_type || 'Type de fournisseur'}
-                />
+
+                {#if loadingAccounts}
+                  <div class="flex items-center space-x-2">
+                    <Spinner class="w-4 h-4" />
+                    <span>
+                      <Translate key="loading_accounts" module="configuration" fallback="Chargement des comptes..." />
+                    </span>
+                  </div>
+                {:else}
+                  <div class="space-y-2">
+                    <Select.Root bind:value={editingSupplierAccount} type="single">
+                      <Select.Trigger class="w-full">
+                        <span data-slot="select-value">
+                          {#if editingSupplierAccount}
+                            {@const selectedAccount = supplierAccounts.find(acc => acc.id === editingSupplierAccount)}
+                            {#if selectedAccount}
+                              {selectedAccount.libelle_compte} ({selectedAccount.numero_compte})
+                            {:else}
+                              {get(i18nStore).resources?.configuration?.select_supplier_type || 'Sélectionnez le type de fournisseur'}
+                            {/if}
+                          {:else}
+                            {get(i18nStore).resources?.configuration?.select_supplier_type || 'Sélectionnez le type de fournisseur'}
+                          {/if}
+                        </span>
+                      </Select.Trigger>
+                      <Select.Content>
+                        <Select.Group>
+                          <Select.Label>
+                            <Translate key="supplier_types" module="configuration" fallback="Types de fournisseurs" />
+                          </Select.Label>
+                          {#each supplierAccounts as account (account.id)}
+                            <Select.Item value={account.id}>
+                              {account.libelle_compte} ({account.numero_compte})
+                            </Select.Item>
+                          {/each}
+                        </Select.Group>
+                      </Select.Content>
+                    </Select.Root>
+
+                    <div class="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        id="editCreateNewAccount"
+                        bind:checked={createNewAccount}
+                        class="rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <Label for="editCreateNewAccount" class="text-sm">
+                        <Translate key="create_new_supplier_type" module="configuration" fallback="Créer un nouveau type de fournisseur" />
+                      </Label>
+                    </div>
+                  </div>
+                {/if}
+
+                {#if createNewAccount}
+                  <div class="space-y-2 mt-2">
+                    <Label for="editNewAccountName">
+                      <Translate key="new_supplier_type_name" module="configuration" fallback="Nom du nouveau type de fournisseur" /> *
+                    </Label>
+                    <Input
+                      id="editNewAccountName"
+                      bind:value={newAccountName}
+                      placeholder={get(i18nStore).resources?.configuration?.enter_supplier_type_name || 'Entrez le nom du nouveau type de fournisseur'}
+                    />
+                  </div>
+                {/if}
+
               </div>
             </div>
           </div>
@@ -1224,13 +1855,16 @@
               onclick={() => {
                 showEditSupplierDialog = false;
                 editingSupplier = null;
+                editingSupplierAccount = undefined;
+                newAccountName = '';
+                createNewAccount = false;
               }}
             >
               <Translate key="cancel" module="common" fallback="Annuler" />
             </Button>
             <Button
               onclick={updateSupplier}
-              disabled={!editingSupplier?.nom}
+              disabled={!editingSupplier?.nom || (!editingSupplierAccount && !createNewAccount) || (createNewAccount && !newAccountName)}
             >
               <Translate key="save" module="common" fallback="Sauvegarder" />
             </Button>
@@ -1319,16 +1953,66 @@
               </div>
 
               <div class="space-y-2 sm:col-span-2">
-                <Label for="editCustomerCategory">
-                  <Translate key="category" module="configuration" fallback="Catégorie" />
+                <Label for="editCustomerAccount">
+                  <Translate key="customer_account" module="configuration" fallback="Compte client" />
                 </Label>
-                <Input
-                  id="editCustomerCategory"
-                  bind:value={editingCustomerCategory}
-                  autocomplete="one-time-code"
-                  placeholder={get(i18nStore).resources?.configuration?.customer_category || 'Catégorie du client'}
-                />
+                <Select.Root bind:value={customerAccount} type="single">
+                  <Select.Trigger class="w-full">
+                    <span data-slot="select-value">
+                      {#if customerAccount}
+                        {@const selectedAccount = customerAccounts.find(acc => acc.id === customerAccount)}
+                        {#if selectedAccount}
+                          {selectedAccount.libelle_compte} ({selectedAccount.numero_compte})
+                        {:else}
+                          {get(i18nStore).resources?.configuration?.select_customer_type || 'Sélectionnez le type de client'}
+                        {/if}
+                      {:else}
+                        {get(i18nStore).resources?.configuration?.select_customer_type || 'Sélectionnez le type de client'}
+                      {/if}
+                    </span>
+                  </Select.Trigger>
+                  <Select.Content>
+                    <Select.Group>
+                      <Select.Label>
+                        <Translate key="customer_types" module="configuration" fallback="Types de clients" />
+                      </Select.Label>
+                      {#each customerAccounts as account (account.id)}
+                        <Select.Item value={account.id}>
+                          {account.libelle_compte} ({account.numero_compte})
+                        </Select.Item>
+                      {/each}
+                    </Select.Group>
+                  </Select.Content>
+                </Select.Root>
               </div>
+
+              <!-- Case à cocher pour créer un nouveau type de client -->
+              <div class="flex items-center space-x-2 sm:col-span-2">
+                <input
+                  id="editCreateNewCustomerAccount"
+                  type="checkbox"
+                  bind:checked={createNewCustomerAccount}
+                  class="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 focus:ring-2"
+                />
+                <Label for="editCreateNewCustomerAccount" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  <Translate key="create_new_customer_type" module="configuration" fallback="Créer un nouveau type de client" />
+                </Label>
+              </div>
+
+              <!-- Champ pour le nom du nouveau type de client -->
+              {#if createNewCustomerAccount}
+                <div class="space-y-2 sm:col-span-2">
+                  <Label for="editNewCustomerAccountName">
+                    <Translate key="new_customer_type_name" module="configuration" fallback="Nom du nouveau type de client" />
+                  </Label>
+                  <Input
+                    id="editNewCustomerAccountName"
+                    bind:value={newCustomerAccountName}
+                    autocomplete="one-time-code"
+                    placeholder={get(i18nStore).resources?.configuration?.customer_type_name || 'Nom du nouveau type de client'}
+                  />
+                </div>
+              {/if}
             </div>
           </div>
 
@@ -1344,7 +2028,7 @@
             </Button>
             <Button
               onclick={updateCustomer}
-              disabled={!editingCustomer?.nom}
+              disabled={!editingCustomer?.nom || (!customerAccount && !createNewCustomerAccount) || (createNewCustomerAccount && !newCustomerAccountName)}
             >
               <Translate key="save" module="common" fallback="Sauvegarder" />
             </Button>

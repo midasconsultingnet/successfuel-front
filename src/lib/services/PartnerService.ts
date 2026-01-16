@@ -1,4 +1,5 @@
 import { apiService } from './ApiService';
+import type { PlanComptable } from './PlanComptableService';
 
 // Types pour la configuration des partenaires
 export interface PartnerConfiguration {
@@ -24,15 +25,17 @@ export interface Supplier {
   station_ids: string[];
   created_at: string;
   updated_at: string;
+  compte_comptable_id?: string | null;  // ID du compte comptable associé
   // Champs virtuels extraits de metadonnees
-  type?: 'carburants' | 'huiles' | 'equipements' | 'other';
+  type?: string;
   // Champs virtuels extraits de donnees_personnelles
   contact_person?: string;
 }
 
 // Interface pour le fournisseur avec les champs virtuels accessibles
 export interface SupplierWithVirtualFields extends Supplier {
-  type: 'carburants' | 'huiles' | 'equipements' | 'other';
+  type: string;
+  compte_comptable_libelle?: string;  // Libellé du compte comptable associé
 }
 
 export interface Customer {
@@ -48,15 +51,15 @@ export interface Customer {
   station_ids: string[];
   created_at: string;
   updated_at: string;
-  // Champs virtuels extraits de metadonnees
-  categorie?: 'particulier' | 'entreprise' | 'fleet' | 'gouvernement';
+  // Champs virtuels extraits de metadonnees (non inclus dans la structure de base)
+  // categorie?: 'particulier' | 'entreprise' | 'fleet' | 'gouvernement'; // Remplacé par metadonnees.type
   // Champs virtuels extraits de donnees_personnelles
   contact_person?: string;
 }
 
 // Interface pour le client avec les champs virtuels accessibles
 export interface CustomerWithVirtualFields extends Customer {
-  categorie: 'particulier' | 'entreprise' | 'fleet' | 'gouvernement';
+  categorie: string;  // Contient l'UUID du compte comptable (type) ou une catégorie traditionnelle
 }
 
 
@@ -67,7 +70,8 @@ export interface CreateSupplierRequest {
   email: string;
   telephone: string;
   adresse: string;
-  type: string;
+  type: string;  // Le type est maintenant le libellé du compte comptable
+  compte_comptable_id?: string | null;  // ID du compte comptable associé
   donnees_personnelles?: Record<string, any> | null;
   metadonnees?: Record<string, any> | null;
 }
@@ -79,7 +83,8 @@ export interface UpdateSupplierRequest {
   email?: string;
   telephone?: string;
   adresse?: string;
-  type?: string;
+  type?: string;  // Le type est maintenant le libellé du compte comptable
+  compte_comptable_id?: string | null;  // ID du compte comptable associé
   donnees_personnelles?: Record<string, any> | null;
   metadonnees?: Record<string, any> | null;
 }
@@ -91,9 +96,11 @@ export interface CreateCustomerRequest {
   email: string;
   telephone: string;
   adresse: string;
-  categorie: string;
+  categorie: 'client'; // Toujours 'client' pour les clients
   donnees_personnelles?: Record<string, any> | null;
-  metadonnees?: Record<string, any> | null;
+  metadonnees?: {
+    type?: string;      // UUID du compte comptable
+  };
 }
 
 export interface UpdateCustomerRequest {
@@ -103,9 +110,11 @@ export interface UpdateCustomerRequest {
   email?: string;
   telephone?: string;
   adresse?: string;
-  categorie?: string;
+  categorie?: 'client'; // Toujours 'client' pour les clients
   donnees_personnelles?: Record<string, any> | null;
-  metadonnees?: Record<string, any> | null;
+  metadonnees?: {
+    type?: string;      // UUID du compte comptable
+  };
 }
 
 // Service pour gérer les partenaires (fournisseurs et clients)
@@ -245,20 +254,29 @@ class PartnerService {
 
 // Fonctions utilitaires pour gérer les champs virtuels
 export function extractSupplierType(supplier: Supplier): SupplierWithVirtualFields {
-  const type = supplier.metadonnees?.type as 'carburants' | 'huiles' | 'equipements' | 'other' || 'other';
+  // Le type est directement ce qui est stocké dans le champ type
+  const type = supplier.type as string || 'Fournisseur';
+
   const contact_person = supplier.donnees_personnelles?.contact_person as string || 'Contact par défaut';
   return {
     ...supplier,
     type,
-    contact_person
+    contact_person,
+    // compte_comptable_libelle sera ajouté dans le composant Svelte
   };
 }
 
+// Fonction utilitaire pour valider si une chaîne est un UUID
+function isValidUUID(uuid: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
+
 export function integrateSupplierType(supplier: SupplierWithVirtualFields): Supplier {
-  const { type, contact_person, ...rest } = supplier;
+  const { type, contact_person, compte_comptable_libelle, compte_comptable_id, ...rest } = supplier;
   const metadonnees = {
     ...supplier.metadonnees,
-    type
+    type: type, // On stocke le type tel quel
   };
   const donnees_personnelles = {
     ...supplier.donnees_personnelles,
@@ -272,7 +290,8 @@ export function integrateSupplierType(supplier: SupplierWithVirtualFields): Supp
 }
 
 export function extractCustomerCategory(customer: Customer): CustomerWithVirtualFields {
-  const categorie = customer.metadonnees?.categorie as 'particulier' | 'entreprise' | 'fleet' | 'gouvernement' || 'particulier';
+  // Extraire le type du champ principal
+  const categorie = customer.metadonnees?.type as string || 'particulier';
   const contact_person = customer.donnees_personnelles?.contact_person as string || 'Contact par défaut';
   return {
     ...customer,
@@ -285,7 +304,7 @@ export function integrateCustomerCategory(customer: CustomerWithVirtualFields): 
   const { categorie, contact_person, ...rest } = customer;
   const metadonnees = {
     ...customer.metadonnees,
-    categorie
+    type: categorie  // Le champ categorie contient maintenant l'UUID du compte
   };
   const donnees_personnelles = {
     ...customer.donnees_personnelles,

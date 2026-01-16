@@ -34,6 +34,9 @@
   // Charger les données au montage
   onMount(async () => {
     try {
+      // Nettoyer l'ID de station sélectionnée au chargement de la page de sélection
+      localStorage.removeItem('selectedStationId');
+
       // Attendre que l'authentification soit initialisée
       // Utiliser get() pour accéder à l'état du store
       const authState = get(authStore);
@@ -59,11 +62,11 @@
     try {
       // Sauvegarder la station sélectionnée dans le localStorage
       localStorage.setItem('selectedStationId', stationId);
-      
+
       // Émettre un événement personnalisé pour notifier les autres parties de l'application
       const event = new CustomEvent('stationChanged', { detail: { stationId } });
       window.dispatchEvent(event);
-      
+
       // Rediriger vers le dashboard
       await goto('/dashboard');
     } catch (err) {
@@ -150,6 +153,48 @@
 
       <!-- Grille des stations -->
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4 md:gap-6">
+        {#if user?.role === 'gerant_compagnie'}
+          <!-- Carte pour créer une nouvelle station ou continuer la configuration -->
+          <button
+            type="button"
+            class="group border rounded-lg p-4 hover:shadow-lg transition-all duration-200 hover:border-primary/50 bg-card flex flex-col h-full text-left"
+            onclick={() => goto('/dashboard/structure')}
+            aria-label="Créer une nouvelle station ou continuer la configuration"
+          >
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-3">
+                <h3 class="font-semibold text-foreground group-hover:text-primary transition-colors flex-1 truncate">
+                  <Translate key="create_or_configure_station" module="common" fallback="Créer/Configurer une station" />
+                </h3>
+                <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900 dark:text-blue-100 flex-shrink-0">
+                  <Translate key="available" module="common" fallback="Disponible" />
+                </span>
+              </div>
+
+              <div class="space-y-2 text-sm text-muted-foreground">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs">🔧</span>
+                  <span><Translate key="configure_station_desc" module="common" fallback="Créer ou configurer une station" /></span>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <span class="text-xs">⚡</span>
+                  <span><Translate key="quick_setup" module="common" fallback="Configuration rapide" /></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-border/30 flex items-center justify-between">
+              <span class="text-xs text-muted-foreground">
+                <Translate key="click_to_proceed" module="common" fallback="Cliquez pour continuer" />
+              </span>
+              <svg class="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </button>
+        {/if}
+
         {#each stations as station (station.id)}
           <button
             type="button"

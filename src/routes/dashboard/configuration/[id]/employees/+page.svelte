@@ -19,6 +19,12 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { formatCurrency } from '$lib/utils/numbers';
+  import { planComptableService } from '$lib/services/PlanComptableService';
+  import { authStore } from '$lib/services/authStore';
+  import type { PlanComptable, PlanComptableCreate, PlanComptableHierarchy } from '$lib/services/PlanComptableService';
+
+  // Type étendu pour les employés avec le libellé du compte comptable
+  type EmployeeWithAccountLabel = Employee & { compte_comptable_libelle?: string };
 
   // Récupérer les données de la page
   let stationId = $state<string>('');
@@ -49,8 +55,11 @@
   });
 
   // Données de configuration des employés
-  let employees = $state<Employee[]>([]);
+  let employees = $state<EmployeeWithAccountLabel[]>([]);
   let companyEmployees = $state<Employee[]>([]);
+
+  // Données pour les comptes comptables des employés
+  let employeeAccounts = $state<PlanComptableHierarchy[]>([]);
 
   // États pour les formulaires
   let showAddEmployeeDialog = $state(false);
@@ -61,18 +70,94 @@
   let employeeEmail = $state('');
   let employeePhone = $state('');
   let employeeAddress = $state('');
-  let employeePosition = $state('');
   let employeeSalary = $state(0);
+  let employeeAccount = $state<string | undefined>(undefined);
+  let createNewEmployeeAccount = $state(false);
+  let newEmployeeAccountName = $state('');
   let selectedEmployeeId = $state('');
 
   // États pour l'édition
   let editingEmployee = $state<Employee | null>(null);
-  let editingEmployeePosition = $state('');
   let editingEmployeeSalary = $state(0);
+  let editingEmployeeAccount = $state<string | undefined>(undefined);
+  let editingCreateNewEmployeeAccount = $state(false);
+  let editingNewEmployeeAccountName = $state('');
 
   // États pour le dialogue de validation de la configuration
   let showValidationDialog = $state(false);
   let validationResults = $state<any>(null);
+
+  // Fonction pour trouver un compte par son numéro
+  function findAccountByNumber(accounts: PlanComptableHierarchy[], number: string): PlanComptableHierarchy | undefined {
+    for (const account of accounts) {
+      if (account.numero_compte === number) {
+        return account;
+      }
+      if (account.enfants && account.enfants.length > 0) {
+        const found = findAccountByNumber(account.enfants, number);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+
+  // Fonction récursive pour trouver les comptes enfants de "Employés"
+  function findEmployeeAccounts(accounts: PlanComptableHierarchy[], parentIsEmployee = false): PlanComptableHierarchy[] {
+    let result: PlanComptableHierarchy[] = [];
+
+    for (const account of accounts) {
+      // Vérifier si c'est un compte "Employés" ou un de ses enfants
+      const isEmployeeAccount = parentIsEmployee ||
+                               account.numero_compte?.startsWith('421') ||
+                               account.libelle_compte.toLowerCase().includes('employé') ||
+                               account.libelle_compte.toLowerCase().includes('employee');
+
+      if (isEmployeeAccount && account.numero_compte !== '421') { // Exclure le compte parent 421 lui-même
+        result.push(account);
+      }
+
+      // Explorer récursivement les enfants
+      if (account.enfants && account.enfants.length > 0) {
+        const childAccounts = findEmployeeAccounts(account.enfants, isEmployeeAccount);
+        result = result.concat(childAccounts);
+      }
+    }
+
+    return result;
+  }
+
+  // Fonction pour charger les comptes comptables des employés
+  async function loadEmployeeAccounts() {
+    try {
+      const allAccounts = await planComptableService.getFullPlanHierarchy();
+      const employeeAccs = findEmployeeAccounts(allAccounts);
+      employeeAccounts = employeeAccs;
+    } catch (err) {
+      console.error('Erreur lors du chargement des comptes employés:', err);
+      employeeAccounts = [];
+    }
+  }
+
+  // Fonction pour enrichir un employé avec le libellé du compte comptable
+  function enrichEmployeeWithAccountLabel(employee: Employee): EmployeeWithAccountLabel {
+    // Vérifier si le poste est un UUID (36 caractères avec tirets)
+    const isUUID = employee.metadonnees?.poste && typeof employee.metadonnees.poste === 'string' && employee.metadonnees.poste.length === 36 && employee.metadonnees.poste.includes('-');
+
+    if (isUUID && employeeAccounts.length > 0) {
+      const compte = employeeAccounts.find(c => c.id === employee.metadonnees?.poste);
+      if (compte) {
+        // Ajouter un champ virtuel pour le libellé du compte
+        return {
+          ...employee,
+          compte_comptable_libelle: compte.libelle_compte
+        };
+      }
+    }
+
+    // Si ce n'est pas un UUID ou que le compte n'est pas trouvé, retourner l'employé tel quel
+    // On cast en EmployeeWithAccountLabel même s'il n'a pas le libellé du compte
+    return employee as EmployeeWithAccountLabel;
+  }
 
   // Fonction pour garantir que les objets de données sont correctement initialisés
   function ensureEmployeeData(employee: Employee): Employee {
@@ -90,11 +175,15 @@
       console.log('Type de stationId:', typeof stationId);
       loading = true;
 
+      // Charger les comptes comptables des employés
+      await loadEmployeeAccounts();
+
       // Vérifier que stationId est une chaîne de caractères valide avant de faire l'appel API
       if (typeof stationId === 'string' && stationId && stationId.trim() !== '') {
         let fetchedEmployees = await employeeService.getEmployeesByStation(stationId);
         // S'assurer que les objets de données sont correctement initialisés
-        employees = fetchedEmployees.map(ensureEmployeeData);
+        // Enrichir les employés avec les libellés des comptes comptables
+        employees = fetchedEmployees.map(ensureEmployeeData).map(enrichEmployeeWithAccountLabel);
 
         // Charger tous les employés de la compagnie pour la sélection
         let fetchedCompanyEmployees = await employeeService.getAllEmployees();
@@ -177,8 +266,50 @@
   // Fonction pour ajouter un employé
   async function addEmployee() {
     try {
-      if (!employeeName || !employeePosition || employeeSalary <= 0 || !stationId) {
-        throw new Error('Le nom, le poste, le salaire et l\'ID de station sont requis');
+      if (!employeeName || !stationId) {
+        throw new Error('Le nom et l\'ID de station sont requis');
+      }
+
+      let compteComptableId: string | null = null;
+
+      // Si l'utilisateur veut créer un nouveau compte
+      if (createNewEmployeeAccount) {
+        // Vérifier que le nom du nouveau compte n'est pas vide
+        if (!newEmployeeAccountName || newEmployeeAccountName.trim() === '') {
+          throw new Error('Le nom du nouveau type de poste est requis');
+        }
+
+        // Trouver le compte parent "Employés" (421)
+        const allAccounts = await planComptableService.getFullPlanHierarchy();
+        const parentAccount = findAccountByNumber(allAccounts, '421');
+
+        // Récupérer l'ID de la compagnie depuis le store d'authentification
+        const authState = get(authStore);
+
+        // Créer un nouveau compte comptable pour ce poste
+        const newAccount: PlanComptableCreate = {
+          libelle_compte: newEmployeeAccountName,
+          compagnie_id: authState.user?.compagnie_id || undefined,
+          parent_id: parentAccount?.id || undefined
+        };
+
+        const createdAccount = await planComptableService.createPlanComptable(newAccount);
+        compteComptableId = createdAccount.id;
+
+        // Rafraîchir les comptes employés pour inclure le nouveau compte
+        await loadEmployeeAccounts();
+      }
+      // Sinon, utiliser le compte sélectionné s'il existe
+      else if (employeeAccount) {
+        compteComptableId = employeeAccount;
+      }
+
+      // Déterminer le poste final - si un compte comptable est sélectionné, utiliser son UUID
+      const finalPoste = compteComptableId;
+
+      // Vérifier que le poste est défini
+      if (!finalPoste) {
+        throw new Error('Un poste (compte comptable) doit être sélectionné ou créé');
       }
 
       // Créer l'objet du nouvel employé
@@ -189,11 +320,10 @@
         adresse: employeeAddress,
         statut: 'actif',
         donnees_personnelles: {
-          poste: employeePosition,
           salaire: employeeSalary
         },
         metadonnees: {
-          poste: employeePosition,
+          poste: finalPoste,
           salaire: employeeSalary
         }
       };
@@ -205,7 +335,7 @@
       await employeeService.associateEmployeeToStation(newEmployee.id, stationId);
 
       // Initialiser correctement l'employé et l'ajouter à la liste
-      const initializedNewEmployee = ensureEmployeeData(newEmployee);
+      const initializedNewEmployee = enrichEmployeeWithAccountLabel(ensureEmployeeData(newEmployee));
       employees = [...employees, initializedNewEmployee];
 
       // Réinitialiser le formulaire
@@ -214,8 +344,10 @@
       employeeEmail = '';
       employeePhone = '';
       employeeAddress = '';
-      employeePosition = '';
       employeeSalary = 0;
+      employeeAccount = undefined;
+      newEmployeeAccountName = '';
+      createNewEmployeeAccount = false;
 
       console.log('Employé ajouté avec succès:', newEmployee);
     } catch (err) {
@@ -231,6 +363,48 @@
         throw new Error('Aucun employé à éditer');
       }
 
+      let compteComptableId: string | null = null;
+
+      // Si l'utilisateur veut créer un nouveau compte
+      if (editingCreateNewEmployeeAccount) {
+        // Vérifier que le nom du nouveau compte n'est pas vide
+        if (!editingNewEmployeeAccountName || editingNewEmployeeAccountName.trim() === '') {
+          throw new Error('Le nom du nouveau type de poste est requis');
+        }
+
+        // Trouver le compte parent "Employés" (421)
+        const allAccounts = await planComptableService.getFullPlanHierarchy();
+        const parentAccount = findAccountByNumber(allAccounts, '421');
+
+        // Récupérer l'ID de la compagnie depuis le store d'authentification
+        const authState = get(authStore);
+
+        // Créer un nouveau compte comptable pour ce poste
+        const newAccount: PlanComptableCreate = {
+          libelle_compte: editingNewEmployeeAccountName,
+          compagnie_id: authState.user?.compagnie_id || undefined,
+          parent_id: parentAccount?.id || undefined
+        };
+
+        const createdAccount = await planComptableService.createPlanComptable(newAccount);
+        compteComptableId = createdAccount.id;
+
+        // Rafraîchir les comptes employés pour inclure le nouveau compte
+        await loadEmployeeAccounts();
+      }
+      // Sinon, utiliser le compte sélectionné s'il existe
+      else if (editingEmployeeAccount) {
+        compteComptableId = editingEmployeeAccount;
+      }
+
+      // Déterminer le poste final - si un compte comptable est sélectionné, utiliser son UUID
+      const finalPoste = compteComptableId;
+
+      // Vérifier que le poste est défini
+      if (!finalPoste) {
+        throw new Error('Un poste (compte comptable) doit être sélectionné ou créé');
+      }
+
       // Mettre à jour l'employé dans la base de données
       const updateData: UpdateEmployeeData = {
         nom: editingEmployee.nom,
@@ -239,12 +413,11 @@
         adresse: editingEmployee.adresse,
         donnees_personnelles: {
           ...editingEmployee.donnees_personnelles,
-          poste: editingEmployeePosition,
           salaire: editingEmployeeSalary
         },
         metadonnees: {
           ...editingEmployee.metadonnees,
-          poste: editingEmployeePosition,
+          poste: finalPoste,
           salaire: editingEmployeeSalary
         }
       };
@@ -254,13 +427,16 @@
       // Mettre à jour dans la liste
       employees = employees.map(emp =>
         emp.id === editingEmployee!.id
-          ? ensureEmployeeData(updatedEmployee)
+          ? enrichEmployeeWithAccountLabel(ensureEmployeeData(updatedEmployee))
           : emp
       );
 
       // Fermer la boîte de dialogue
       showEditEmployeeDialog = false;
       editingEmployee = null;
+      editingEmployeeAccount = undefined;
+      editingNewEmployeeAccountName = '';
+      editingCreateNewEmployeeAccount = false;
 
       console.log('Employé mis à jour avec succès');
     } catch (err) {
@@ -340,8 +516,21 @@
   // Fonction pour préparer l'édition d'un employé
   function prepareEditEmployee(employee: Employee) {
     editingEmployee = { ...employee };
-    editingEmployeePosition = employee.donnees_personnelles.poste || employee.metadonnees.poste || '';
     editingEmployeeSalary = employee.donnees_personnelles.salaire || employee.metadonnees.salaire || 0;
+
+    // Vérifier si le poste est un UUID (36 caractères avec tirets)
+    const isUUID = employee.metadonnees?.poste && typeof employee.metadonnees.poste === 'string' && employee.metadonnees.poste.length === 36 && employee.metadonnees.poste.includes('-');
+
+    if (isUUID) {
+      editingEmployeeAccount = employee.metadonnees?.poste as string;
+      editingCreateNewEmployeeAccount = false;
+      editingNewEmployeeAccountName = '';
+    } else {
+      editingEmployeeAccount = undefined;
+      editingCreateNewEmployeeAccount = false;
+      editingNewEmployeeAccountName = '';
+    }
+
     showEditEmployeeDialog = true;
   }
 
@@ -361,7 +550,7 @@
       validation.employees.isValid = true;
       validation.employees.message = `${employees.length} employé(s) configuré(s)`;
       validation.employees.details = employees.map(employee =>
-        `${employee.nom} (${employee.donnees_personnelles?.poste || employee.metadonnees?.poste || 'Poste non spécifié'})`
+        `${employee.nom} (${employee.compte_comptable_libelle || employee.metadonnees?.poste || 'Poste non spécifié'})`
       );
     }
 
@@ -469,7 +658,7 @@
                   <Label>
                     <Translate key="position" module="configuration" fallback="Poste" />
                   </Label>
-                  <p class="text-sm">{employee.donnees_personnelles?.poste || employee.metadonnees?.poste || get(i18nStore).resources?.configuration?.no_position || 'Aucun poste'}</p>
+                  <p class="text-sm">{employee.compte_comptable_libelle || employee.metadonnees?.poste || get(i18nStore).resources?.configuration?.no_position || 'Aucun poste'}</p>
                 </div>
                 <div>
                   <Label>
@@ -580,17 +769,67 @@
                       />
                     </div>
 
-                    <div class="space-y-2">
-                      <Label for="employeePosition">
+                    <!-- Sélection du poste comptable -->
+                    <div class="space-y-2 sm:col-span-2">
+                      <Label for="employeeAccount">
                         <Translate key="position" module="configuration" fallback="Poste" />
                       </Label>
-                      <Input
-                        id="employeePosition"
-                        bind:value={employeePosition}
-                        autocomplete="one-time-code"
-                        placeholder={get(i18nStore).resources?.configuration?.position_placeholder || 'Poste de l\'employé'}
-                      />
+                      <Select.Root bind:value={employeeAccount} type="single">
+                        <Select.Trigger class="w-full">
+                          <span data-slot="select-value">
+                            {#if employeeAccount}
+                              {@const selectedAccount = employeeAccounts.find(acc => acc.id === employeeAccount)}
+                              {#if selectedAccount}
+                                {selectedAccount.libelle_compte} ({selectedAccount.numero_compte})
+                              {:else}
+                                {get(i18nStore).resources?.configuration?.select_employee_position || 'Sélectionnez le poste'}
+                              {/if}
+                            {:else}
+                              {get(i18nStore).resources?.configuration?.select_employee_position || 'Sélectionnez le poste'}
+                            {/if}
+                          </span>
+                        </Select.Trigger>
+                        <Select.Content>
+                          <Select.Group>
+                            <Select.Label>
+                              <Translate key="employee_positions" module="configuration" fallback="Postes" />
+                            </Select.Label>
+                            {#each employeeAccounts as account (account.id)}
+                              <Select.Item value={account.id}>
+                                {account.libelle_compte} ({account.numero_compte})
+                              </Select.Item>
+                            {/each}
+                          </Select.Group>
+                        </Select.Content>
+                      </Select.Root>
                     </div>
+
+                    <!-- Case à cocher pour créer un nouveau poste -->
+                    <div class="flex items-center space-x-2 sm:col-span-2">
+                      <input
+                        type="checkbox"
+                        id="createNewEmployeeAccount"
+                        bind:checked={createNewEmployeeAccount}
+                        class="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-primary focus:ring-2"
+                      />
+                      <Label for="createNewEmployeeAccount" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                        <Translate key="create_new_position" module="configuration" fallback="Créer un nouveau poste" />
+                      </Label>
+                    </div>
+
+                    <!-- Champ pour le nouveau poste -->
+                    {#if createNewEmployeeAccount}
+                      <div class="space-y-2 sm:col-span-2">
+                        <Label for="newEmployeeAccountName">
+                          <Translate key="new_position_name" module="configuration" fallback="Nom du nouveau poste" />
+                        </Label>
+                        <Input
+                          id="newEmployeeAccountName"
+                          bind:value={newEmployeeAccountName}
+                          placeholder={get(i18nStore).resources?.configuration?.enter_employee_position_name || 'Entrez le nom du nouveau poste'}
+                        />
+                      </div>
+                    {/if}
 
                     <div class="space-y-2">
                       <Label for="employeeSalary">
@@ -607,7 +846,7 @@
 
                   <Button
                     onclick={addEmployee}
-                    disabled={!employeeName || !employeePosition || employeeSalary <= 0}
+                    disabled={!employeeName || employeeSalary <= 0 || (!employeeAccount && !createNewEmployeeAccount) || (createNewEmployeeAccount && !newEmployeeAccountName)}
                     class="w-full"
                   >
                     <Translate key="add_new_employee" module="configuration" fallback="Ajouter nouvel employé" />
@@ -672,7 +911,6 @@
                     employeeEmail = '';
                     employeePhone = '';
                     employeeAddress = '';
-                    employeePosition = '';
                     employeeSalary = 0;
                     selectedEmployeeId = '';
                   }}
@@ -753,17 +991,66 @@
                 />
               </div>
 
-              <div class="space-y-2">
-                <Label for="editEmployeePosition">
+              <div class="space-y-2 sm:col-span-2">
+                <Label for="editEmployeeAccount">
                   <Translate key="position" module="configuration" fallback="Poste" />
                 </Label>
-                <Input
-                  id="editEmployeePosition"
-                  bind:value={editingEmployeePosition}
-                  autocomplete="one-time-code"
-                  placeholder={get(i18nStore).resources?.configuration?.position_placeholder || 'Poste de l\'employé'}
-                />
+                <Select.Root bind:value={editingEmployeeAccount} type="single">
+                  <Select.Trigger class="w-full">
+                    <span data-slot="select-value">
+                      {#if editingEmployeeAccount}
+                        {@const selectedAccount = employeeAccounts.find(acc => acc.id === editingEmployeeAccount)}
+                        {#if selectedAccount}
+                          {selectedAccount.libelle_compte} ({selectedAccount.numero_compte})
+                        {:else}
+                          {get(i18nStore).resources?.configuration?.select_employee_position || 'Sélectionnez le poste'}
+                        {/if}
+                      {:else}
+                        {get(i18nStore).resources?.configuration?.select_employee_position || 'Sélectionnez le poste'}
+                      {/if}
+                    </span>
+                  </Select.Trigger>
+                  <Select.Content>
+                    <Select.Group>
+                      <Select.Label>
+                        <Translate key="employee_positions" module="configuration" fallback="Postes" />
+                      </Select.Label>
+                      {#each employeeAccounts as account (account.id)}
+                        <Select.Item value={account.id}>
+                          {account.libelle_compte} ({account.numero_compte})
+                        </Select.Item>
+                      {/each}
+                    </Select.Group>
+                  </Select.Content>
+                </Select.Root>
               </div>
+
+              <!-- Case à cocher pour créer un nouveau poste -->
+              <div class="flex items-center space-x-2 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  id="editCreateNewEmployeeAccount"
+                  bind:checked={editingCreateNewEmployeeAccount}
+                  class="w-4 h-4 text-primary bg-gray-100 border-gray-300 rounded focus:ring-primary focus:ring-2"
+                />
+                <Label for="editCreateNewEmployeeAccount" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                  <Translate key="create_new_position" module="configuration" fallback="Créer un nouveau poste" />
+                </Label>
+              </div>
+
+              <!-- Champ pour le nouveau poste -->
+              {#if editingCreateNewEmployeeAccount}
+                <div class="space-y-2 sm:col-span-2">
+                  <Label for="editNewEmployeeAccountName">
+                    <Translate key="new_position_name" module="configuration" fallback="Nom du nouveau poste" />
+                  </Label>
+                  <Input
+                    id="editNewEmployeeAccountName"
+                    bind:value={editingNewEmployeeAccountName}
+                    placeholder={get(i18nStore).resources?.configuration?.enter_employee_position_name || 'Entrez le nom du nouveau poste'}
+                  />
+                </div>
+              {/if}
 
               <div class="space-y-2">
                 <Label for="editEmployeeSalary">
@@ -791,7 +1078,7 @@
             </Button>
             <Button
               onclick={updateEmployee}
-              disabled={!editingEmployee?.nom || !editingEmployeePosition || editingEmployeeSalary <= 0}
+              disabled={!editingEmployee?.nom || editingEmployeeSalary <= 0 || (!editingEmployeeAccount && !editingCreateNewEmployeeAccount) || (editingCreateNewEmployeeAccount && !editingNewEmployeeAccountName)}
             >
               <Translate key="save" module="common" fallback="Sauvegarder" />
             </Button>
